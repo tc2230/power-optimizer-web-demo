@@ -1,0 +1,16 @@
+services:
+  power-optimizer:
+    container_name: service-power-optimizer
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - 8501
+    command: ["nohup", "streamlit", "run", "web_demo.py", "--server.port", "8501", "--server.baseUrlPath", "/power-optimizer", "--theme.base", "dark", "&"] # , "--server.port", "8501" 
+    networks:
+      - service-network
+
+networks:
+  service-network:
+    name: service-network
+    driver: bridge

@@ -240,7 +240,7 @@ def optimize(df_load, df_pv, max_sec, data_freq,
         #### initialize a model
         ################################################################################
         ## init.
-        model = Model(solver_name='CBC')
+        model = Model()
         
         ## decision variables
         # obj.
@@ -934,3 +934,5 @@ if btn_opt or st.session_state['optimization_count'] > 0:
         # except Exception as e:
         #     btn_opt = placeholder_btn.form_submit_button(label=' Optimize ')
         #     st.write(f'Error while optimizing: {e}')
+
+

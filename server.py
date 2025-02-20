@@ -38,6 +38,10 @@ class DataService:
         """Load and cache data from json files"""
         with open(os.path.join(data_dir, 'params.json'), 'r') as file:
             params = json.load(file)
+        
+        # read json data as dataframe
+        params["ed_bid"]["data"] = pd.DataFrame.from_dict(params["ed_bid"]["data"]).copy()
+          
         return params
 
 class Model:
@@ -45,46 +49,51 @@ class Model:
         self.data_service = data_service
 
         data = self.data_service.load_sample_data()
+        
+        # set data
         self.df_load = data["load"]
         self.df_pv = data["pv"]
 
+        # load default params
         params = self.data_service.load_default_params()
-
-        self.max_sec = params["input_max_sec"][""]
-        self.data_freq = params[""][""]
-        self.c_cap = params[""][""]
-        self.basic_tariff_per_kwh = params[""][""]
-        self.summer = params[""][""]
-        self.e_cap = params[""][""]
-        self.soc_init = params[""][""]
-        self.opt_soc_init = params[""][""]
-        self.soc_end = params[""][""]
-        self.opt_soc_end = params[""][""]
-        self.lb = params[""][""]
-        self.ub = params[""][""]
-        self.ess_degradation_cost_per_kwh_discharged = params[""][""]
-        self.factory_profit_per_kwh = params[""][""]
-        self.tendered_cap = params[""][""]
-        self.clearing_price_per_mwh = params[""][""]
-        self.exec_rate = params[""][""]
-        self.effectiveness_level = params[""][""]
-        self.DA_margin_price_per_mwh = params[""][""]
-        self.dispatch_ratio = params[""][""]
-        self.opt_bid = params[""][""]
-        self.opt_tendered_cap = params[""][""]
-        self.relax_tendered_step = params[""][""]
-        self.tendered_lb = params[""][""]
-        self.tendered_ub = params[""][""]
-        self.bid = params[""][""]
-        self.bid_win = params[""][""]
-        self.dispatch = params[""][""]
-        self.limit_g_es_p = params[""][""]
-        self.limit_es_p = params[""][""]
-        self.limit_g_p = params[""][""]
-        self.limit_pv_p = params[""][""]
-        self.loss_coef = params[""][""]
-        self.bulk_tariff_per_kwh = params[""][""]
-
+        
+        self.data_freq = params["sb_data_freq"]["options"][params["sb_data_freq"]["index"]]
+        self.max_sec = params["input_max_sec"]["value"]
+        self.c_cap = params["input_c_cap"]["value"]
+        self.basic_tariff_per_kwh = params["input_basic_tariff_per_kwh"]["value"]
+        self.summer = params["cb_summer"]["value"]
+        self.e_cap = params["input_e_cap"]["value"]
+        self.soc_init = params["input_soc_init"]["value"]
+        self.opt_soc_init = params["cb_opt_soc_init"]["value"]
+        self.soc_end = params["input_soc_end"]["value"]
+        self.opt_soc_end = params["cb_opt_soc_end"]["value"]
+        self.lb = params["input_lb"]["value"]
+        self.ub = params["input_ub"]["value"]
+        self.ess_degradation_cost_per_kwh_discharged = params["input_ess_degradation_cost_per_kwh_discharged"]["value"]
+        self.factory_profit_per_kwh = params["input_factory_profit_per_kwh"]["value"]
+        self.tendered_cap = params["ed_bid"]["data"]["tendered_cap(mWh)"]
+        self.clearing_price_per_mwh = params["ed_bid"]["data"]["clearing_price(mWh)"]
+        self.exec_rate = params["input_exec_rate"]["value"]
+        self.effectiveness_level = params["sb_effectiveness_level"]["options"][params["sb_effectiveness_level"]["index"]]
+        self.DA_margin_price_per_mwh = params["ed_bid"]["data"]["marginal_price(mWh)"]
+        self.dispatch_ratio = params["ed_bid"]["data"]["dispatch_ratio(%)"]
+        self.opt_bid = params["cb_opt_bid"]["value"]
+        self.opt_tendered_cap = params["cb_opt_tendered_cap"]["value"]
+        self.relax_tendered_step = params["cb_relax_tendered_step"]["value"]
+        self.tendered_lb = params["input_tendered_lb"]["value"]
+        self.tendered_ub = params["input_tendered_ub"]["value"]
+        self.bid = params["ed_bid"]["data"]["bid"].tolist()
+        self.bid_win = params["ed_bid"]["data"]["win"].tolist()
+        self.dispatch = params["ed_bid"]["data"]["dispatch"].tolist()
+        self.limit_g_es_p = params["input_limit_g_es_p"]["value"]
+        self.limit_es_p = params["input_limit_es_p"]["value"]
+        self.limit_g_p = params["input_limit_g_p"]["value"]
+        self.limit_pv_p = params["input_limit_pv_p"]["value"]
+        self.loss_coef = params["input_loss_coef"]["value"]
+        self.bulk_tariff_per_kwh = params["input_bulk_tariff_per_kwh"]["value"]
+    
+        # add constraints
+        # ...
 # inititalize session
 if 'data_load' not in st.session_state:
     st.session_state['data_load'] = None

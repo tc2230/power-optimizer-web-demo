@@ -1,10 +1,13 @@
+import os
 import io
+import json
 import base64
 import datetime
 import numpy as np
 import pandas as pd
 import streamlit as st
 from mip import Model, xsum, BINARY, INTEGER, CONTINUOUS, minimize, maximize, OptimizationStatus
+from typing import Dict, List, Tuple, Optional
 
 import matplotlib.pyplot as plt
 
@@ -12,45 +15,75 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-description = {}
-description['status'] = '最佳化運算結果，可能為"FEASIBLE", "INFEASIBLE", "OPTIMAL", "NO_SOLUTION_FOUND", "ERROR"......'
-description['data_freq'] = '系統操作週期'
-description['max_sec'] = '求解上限時間(秒)，若時限內無法求得最佳解則返回"NO_SOLUTION_FOUND"或"FEASIBLE"'
-description['c_cap'] = '契約容量(kWh)'
-description['summer'] = '是否使用夏季流動電價（高壓用戶三段式時間電價/固定尖峰時間）'
-description['basic_tariff_per_kwh'] = '基本時間電價，目前使用111年7月公布之版本，參考值：夏季=223.6/非夏季=166.9（https://www.taipower.com.tw/upload/6614/2022070417371173396.pdf#page=13）'
-description['e_cap'] = '機組容量(kWh)'
-description['soc_init'] = '初始SOC(%)，數值需介於0-100之間'
-description['opt_soc_init'] = '是否由系統建議最佳初始SOC；若勾選此項，則目前設定值不參與計算，改由演算法推薦'
-description['soc_end'] = '最後一個時段的SOC下限(%)，數值需介於0-100之間'
-description['opt_soc_end'] = '是否由系統建議最佳結束SOC；若勾選此項，則目前設定值不參與計算，改由演算法推薦'
-description['lb'] = 'SOC下限(%)，數值需介於0-100之間'
-description['ub'] = 'SOC上限(%)，數值需介於0-100之間'
-description['ess_degradation_cost_per_kwh_discharged'] = '儲能系統每放一度電所產生的成本與設備折舊。Ex: 1e+7/(1000*1000) = ＄10/kWh'
-description['factory_profit_per_kwh'] = '工廠每使用一度電進行生產可收穫之利潤'
-description['tendered_cap'] = '參與即時備轉服務之投標容量，以kWh為單位'
-description['clearing_price_per_mwh'] = '日前即時備轉容量結清價格(每mWh)'
+# set layout
+st.set_page_config(page_title='Power Optimizer test(Cht)', layout="wide", page_icon='./img/favicon.png')
+st.markdown("<style>.row-widget.stButton {text-align: center;}</style>", unsafe_allow_html=True)
 
-description['exec_rate'] = '調度執行率(%)，影響服務品質指標（https://atenergy.com.tw/wp-content/uploads/2020/11/%E8%BC%94%E5%8A%A9%E6%9C%8D%E5%8B%99%E5%8F%8A%E5%82%99%E7%94%A8%E5%AE%B9%E9%87%8F%E4%BA%A4%E6%98%93%E8%A9%A6%E8%A1%8C%E5%B9%B3%E5%8F%B0%E7%AC%AC%E4%BA%8C%E6%AC%A1%E5%85%AC%E9%96%8B%E8%AA%AA%E6%98%8E%E6%9C%832020.11.11.pdf#page=30）'
+class DataService:
+    """Handles data loading and caching operations"""
 
-description['opt_tendered_cap'] = '是否由系統建議最佳投標容量，若勾選此項，下表中的"tendered_cap"一項不會作為模型輸入，改由演算法推薦。'
-description['relax_tendered_step'] = '放鬆投標容量間格限制，若勾選，則最小投標單位不限於 0.1 mWh'
-description['tendered_ub'] = '投標容量上限(mWh)，預設不可超過儲能機組SOC上限。'
-description['tendered_lb'] = '投標容量下限(mWh)'
+    @staticmethod
+    @st.cache_resource
+    def load_sample_data(data_dir: str = "./data") -> Dict[str, pd.DataFrame]:
+        """Load and cache data from CSV files"""
+        files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
+        sample_data_ref = {
+            f.replace(".csv", ""): pd.read_csv(os.path.join(data_dir, f)) for f in files
+            }
+        return sample_data_ref
 
-description['effectiveness_level'] = '效能級數，影響效能價格。 1: ＄100/mWh, 2: ＄60/mWh, 3:  ＄40/mWh, other: ＄0/mWh'
-description['DA_margin_price_per_mwh'] = '日前電能邊際價格(每mWh)'
-description['dispatch_ratio'] = '預估調度比例(%)，數值需介於0-100之間'
+    @staticmethod
+    @st.cache_resource
+    def load_default_params(data_dir: str = "./data") -> Dict[str, str]:
+        """Load and cache data from json files"""
+        with open(os.path.join(data_dir, 'params.json'), 'r') as file:
+            params = json.load(file)
+        return params
 
-description['txt_ed_bid'] = '可自由設定投標情境。"bid"：該時段投標與否, "win"：該時段若投標是否會得標, "dispatch"：該時段若得標是否會被調度, "tendered_cap"：投標容量, "dispatch_ratio"：調度比例，以投標容量計算, "clearing_price"：該時段日前結清價, "marginal_price"：該時段日前電能報價。'
-description['opt_bid'] = '是否由系統建議最佳投標時段；若勾選此項，下表中的"bid"一項不會作為模型輸入，改由演算法推薦；但仍需要設定"win"、"dispatch"兩項。'
+class Model:
+    def __init__(self, data_service: DataService):
+        self.data_service = data_service
 
-description['limit_g_es_p'] = '儲能機組充電功率上限(kW)'
-description['limit_es_p'] = '儲能機組放電功率上限(kW)'
-description['limit_g_p'] = '電網輸入功率上限(kW)'
-description['limit_pv_p'] = '太陽能機組輸送功率上限(kW)'
-description['loss_coef'] = '電能輸送損失係數，數值需介於0-1之間'
-description['bulk_tariff_per_kwh'] = '太陽能躉售電價(每kWh)。Ex: (3.8680 + 5.8952)/2 = 4.8816'
+        data = self.data_service.load_sample_data()
+        self.df_load = data["load"]
+        self.df_pv = data["pv"]
+
+        params = self.data_service.load_default_params()
+
+        self.max_sec = params["input_max_sec"][""]
+        self.data_freq = params[""][""]
+        self.c_cap = params[""][""]
+        self.basic_tariff_per_kwh = params[""][""]
+        self.summer = params[""][""]
+        self.e_cap = params[""][""]
+        self.soc_init = params[""][""]
+        self.opt_soc_init = params[""][""]
+        self.soc_end = params[""][""]
+        self.opt_soc_end = params[""][""]
+        self.lb = params[""][""]
+        self.ub = params[""][""]
+        self.ess_degradation_cost_per_kwh_discharged = params[""][""]
+        self.factory_profit_per_kwh = params[""][""]
+        self.tendered_cap = params[""][""]
+        self.clearing_price_per_mwh = params[""][""]
+        self.exec_rate = params[""][""]
+        self.effectiveness_level = params[""][""]
+        self.DA_margin_price_per_mwh = params[""][""]
+        self.dispatch_ratio = params[""][""]
+        self.opt_bid = params[""][""]
+        self.opt_tendered_cap = params[""][""]
+        self.relax_tendered_step = params[""][""]
+        self.tendered_lb = params[""][""]
+        self.tendered_ub = params[""][""]
+        self.bid = params[""][""]
+        self.bid_win = params[""][""]
+        self.dispatch = params[""][""]
+        self.limit_g_es_p = params[""][""]
+        self.limit_es_p = params[""][""]
+        self.limit_g_p = params[""][""]
+        self.limit_pv_p = params[""][""]
+        self.loss_coef = params[""][""]
+        self.bulk_tariff_per_kwh = params[""][""]
 
 # inititalize session
 if 'data_load' not in st.session_state:
@@ -58,10 +91,10 @@ if 'data_load' not in st.session_state:
 if 'data_pv' not in st.session_state:
     st.session_state['data_pv'] = None
 if 'optimization_status' not in st.session_state:
-    st.session_state['optimization_status'] = None    
+    st.session_state['optimization_status'] = None
 if 'optimization_count' not in st.session_state:
     st.session_state['optimization_count'] = 0
-    
+
 def make_data_plot(df, title='data', x='time', y='value'):
     df = df.reset_index()
     fig = px.line(df, x=x, y=y)
@@ -69,8 +102,8 @@ def make_data_plot(df, title='data', x='time', y='value'):
         title=title,
         xaxis_title="time",
         yaxis_title="value(kWh)",
-        # width=1800, 
-        # height=800, 
+        # width=1800,
+        # height=800,
         font=dict(
             family="Arial",
             # size=20,
@@ -85,7 +118,7 @@ def make_result_plot(df, title='data', secondary_y_limit=None):
     if not secondary_y_limit:
         secondary_y_limit = [df['total_power_flow_of_ESS'].min() - 100, max(df['power_from_ESS_to_factory'].max(), df['power_from_PV_to_factory'].max())]
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    
+
     fig.add_trace(go.Scatter(x=x_index, y=[7000]*len(df), name='Contract Capacity', marker_color='#DD6251', line=dash_line), secondary_y=True)
     fig.add_trace(go.Scatter(x=x_index, y=df['load'], name='Load', marker_color='#26272C'), secondary_y=True)
     fig.add_trace(go.Scatter(x=x_index, y=df['total_power_from_grid_to_factory'], name='Total power from grid to factory', marker_color='#6A90AB'), secondary_y=True)
@@ -96,19 +129,19 @@ def make_result_plot(df, title='data', secondary_y_limit=None):
     # fig.add_trace(go.Scatter(x=x_index, y=df['pv'], name='PV'), secondary_y=False)
 
     # update layout
-    fig.update_layout(dict(yaxis2={'anchor': 'x', 'overlaying': 'y', 'side': 'left'}, 
+    fig.update_layout(dict(yaxis2={'anchor': 'x', 'overlaying': 'y', 'side': 'left'},
                            yaxis={'anchor': 'x', 'domain': [0.0, 1.0], 'side':'right'}))
     fig.update_layout(title_text=title, xaxis_title="time", yaxis_title="Power(kWh)", margin=dict(t=28),
                       font=dict(size=32, family="Arial", color="black"))
     # fig.update_yaxes(range=[0,df['total_power_from_grid_to_factory'].min()-100], secondary_y=True)
     # fig.update_yaxes(range=[0, secondary_y_limit], secondary_y=False)
     # fig.update_yaxes(range=secondary_y_limit, secondary_y=False)
-    
+
     fig.update_yaxes(rangemode='nonnegative', scaleanchor='y', scaleratio=1, constraintoward='bottom', secondary_y=True)
     fig.update_yaxes(rangemode='normal', scaleanchor='y2', scaleratio=0.5, constraintoward='bottom', secondary_y=False)
-    
+
     return fig
-    
+
 def get_service_quality_index(exec_rate=95):
     if exec_rate >= 95:
         return 1.0
@@ -128,12 +161,12 @@ def get_effectiveness_price(level=0):
         return 40
     else:
         return 0
-       
-def optimize(df_load, df_pv, max_sec, data_freq, 
-             c_cap, basic_tariff_per_kwh, summer, e_cap, soc_init, opt_soc_init, soc_end, opt_soc_end, lb, ub, 
-             ess_degradation_cost_per_kwh_discharged, factory_profit_per_kwh, 
-             tendered_cap, clearing_price_per_mwh, exec_rate, effectiveness_level, DA_margin_price_per_mwh, dispatch_ratio, 
-             opt_bid, opt_tendered_cap, relax_tendered_step, tendered_lb, tendered_ub, bid, bid_win, dispatch, 
+
+def optimize(df_load, df_pv, max_sec, data_freq,
+             c_cap, basic_tariff_per_kwh, summer, e_cap, soc_init, opt_soc_init, soc_end, opt_soc_end, lb, ub,
+             ess_degradation_cost_per_kwh_discharged, factory_profit_per_kwh,
+             tendered_cap, clearing_price_per_mwh, exec_rate, effectiveness_level, DA_margin_price_per_mwh, dispatch_ratio,
+             opt_bid, opt_tendered_cap, relax_tendered_step, tendered_lb, tendered_ub, bid, bid_win, dispatch,
              limit_g_es_p, limit_es_p, limit_g_p, limit_pv_p, loss_coef, bulk_tariff_per_kwh, **kwargs):
     # try:
         report = []
@@ -151,7 +184,7 @@ def optimize(df_load, df_pv, max_sec, data_freq,
         # load[20] += 2000
         # PV
         pv = df_pv['value'].iloc[::int(freq/5)].values.flatten()
-    
+
         #### energy charge(111/7)
         if summer:
             # summer
@@ -204,25 +237,25 @@ def optimize(df_load, df_pv, max_sec, data_freq,
         #     p1 = np.array([4.11]*int(n*(10/24))) # 1400-0000
         #     price = np.hstack([p1, p2, p3, p4])
         #####################################
-        
+
         # Multiplication factor for penalty charge
         dummy_penalty_coef_1 = 2
         dummy_penalty_coef_2 = 3
-        
+
         #### ESS
         # unit
         soc_init = soc_init/100
         soc_end = soc_end/100
         lb = lb/100
         ub = ub/100
-        
+
         # init.
         e_init = e_cap*soc_init
         e_end = e_cap*soc_end
         # ESS boundary
         soc_lb = np.array([e_cap*lb for i in range(n)])
         soc_ub = np.array([e_cap*ub for i in range(n)])
-        
+
         #### Trading
         tendered_cap = [v*10 for v in tendered_cap] # temporarily converted to integer level for usage of INTEGER variable type. Ex: 1.2 mWh --> 12.0
         service_quality_index = get_service_quality_index(exec_rate)
@@ -230,18 +263,18 @@ def optimize(df_load, df_pv, max_sec, data_freq,
         clearing_price_per_kwh = [v/1000 for v in clearing_price_per_mwh]
         DA_margin_price_per_kwh = [v/1000 for v in DA_margin_price_per_mwh]
         dispatch_ratio = [v/100 for v in dispatch_ratio]
-        
+
         #### other
         # big M for modeling
         M = 1e+15
         ################################################## parameter setting ##################################################
         ################################################## model ##################################################
-        
+
         #### initialize a model
         ################################################################################
         ## init.
         model = Model()
-        
+
         ## decision variables
         # obj.
         revenue = model.add_var(name='revenue', var_type=CONTINUOUS, lb=float('-Inf'), ub=float('Inf'))
@@ -252,13 +285,13 @@ def optimize(df_load, df_pv, max_sec, data_freq,
         p_es_f = [model.add_var(name=f"power_from_ESS_to_factory_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)]
         p_pv_f = [model.add_var(name=f"power_from_PV_to_factory_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)]
         p_pv_es = [model.add_var(name=f"power_from_PV_to_ESS_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)] # the power from PV will be served to the factory first
-        p_pv_g = [model.add_var(name=f"power_from_PV_to_grid_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)] # (躉售)the power from PV will be served to the factory first 
+        p_pv_g = [model.add_var(name=f"power_from_PV_to_grid_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)] # (躉售)the power from PV will be served to the factory first
         p_g_es = [model.add_var(name=f"power_from_grid_to_ESS_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)]
         # total power from grid (aux for visulization)
         total_g = [model.add_var(name=f'total_power_from_grid_t{i}', var_type=CONTINUOUS) for i in range(n)]
         total_g_f = [model.add_var(name=f'total_power_from_grid_to_factory_t{i}', var_type=CONTINUOUS) for i in range(n)]
         total_g_es = [model.add_var(name=f'total_power_from_grid_to_ESS_t{i}', var_type=CONTINUOUS) for i in range(n)]
-        
+
         # ESS SOC "at the beginning" of the time interval
         es = [model.add_var(name=f"ESS_SOC_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)]
         # excessive load
@@ -299,7 +332,7 @@ def optimize(df_load, df_pv, max_sec, data_freq,
             aux_tendered_cap = [model.add_var(name=f"aux_tendered_cap_at_t{i}", lb=float('-Inf'), ub=float('Inf'), var_type=CONTINUOUS) for i in range(n)]
         else:
             aux_tendered_cap = [model.add_var(name=f"aux_tendered_cap_at_t{i}", lb=float('-Inf'), ub=float('Inf'), var_type=INTEGER) for i in range(n)]
-            
+
         #### add constraints
         ################################################################################
         ## basic constraints
@@ -324,7 +357,7 @@ def optimize(df_load, df_pv, max_sec, data_freq,
                 model.add_constr(aux_tendered_cap[i] <= tendered_cap[i])
             else:
                 model.add_constr(aux_tendered_cap[i] == tendered_cap[i]*bid[i])
-                
+
         # non-negative
         for i in range(n):
             model.add_constr(p_g_f[i] >= 0.0)
@@ -338,7 +371,7 @@ def optimize(df_load, df_pv, max_sec, data_freq,
             model.add_constr(dummy_g_f[i] >= 0.0)
             model.add_constr(dummy_g_es[i] >= 0.0)
             model.add_constr(aux_dummy_g_es[i] >= 0.0)
-            
+
         ## maximum function of dummy variables, for panelty calculation
         for i in range(n):
             model.add_constr(q_1 >= dummy_g_1[i])
@@ -361,14 +394,14 @@ def optimize(df_load, df_pv, max_sec, data_freq,
         if opt_bid:
             for i in range(n-3*consecutive_n):
                 model.add_constr(xsum(bid[j]*bid_win[j]*dispatch[j] for j in range(i, i+3*consecutive_n)) <= 1)
-        
+
         ## bidding
         # bounds
         for i in range(n):
             model.add_constr(aux_tendered_cap[i] >= 10*tendered_lb*bid[i])
             model.add_constr(aux_tendered_cap[i] <= 10*tendered_ub*bid[i])
-        
-            
+
+
         ## ESS
         # init.
         if not opt_soc_init:
@@ -376,7 +409,7 @@ def optimize(df_load, df_pv, max_sec, data_freq,
         # ending SOC lb
         if not opt_soc_end:
             model.add_constr(es[-1] >= e_end)
-        
+
         # output capacity limitation
         for i in range(n):
             model.add_constr(aux_p_es_f[i] <= es[i])
@@ -389,7 +422,7 @@ def optimize(df_load, df_pv, max_sec, data_freq,
         for i in range(n):
             model.add_constr(es[i] >= soc_lb[i])
             model.add_constr(es[i] <= soc_ub[i])
-            
+
         # print(e_init)
         # print(soc_lb[i], soc_ub[i])
         ## PV
@@ -414,21 +447,21 @@ def optimize(df_load, df_pv, max_sec, data_freq,
             model.add_constr(p_es_f[i] <= limit_es_p)
             model.add_constr(aux_p_es_f[i] <= limit_es_p)
             model.add_constr(p_pv_f[i] <= limit_pv_p)
-            
+
             model.add_constr(p_pv_es[i] <= limit_pv_p)
             # model.add_constr(p_pv_es[i] <= limit_g_es_p)
-            
+
             model.add_constr(p_pv_g[i] <= limit_pv_p)
-            
+
             model.add_constr(p_g_es[i] <= limit_g_es_p)
             model.add_constr(aux_p_g_es[i] <= limit_g_es_p)
-            
+
             model.add_constr(dummy_g_f[i] <= limit_g_p)
             model.add_constr(dummy_g_es[i] <= limit_g_es_p)
             model.add_constr(dummy_g_es[i] <= limit_g_p)
             model.add_constr(aux_dummy_g_es[i] <= limit_g_es_p)
             # model.add_constr(aux_dummy_g_es[i] <= limit_g_p)
-            
+
         #### obj. ensemble
         ################################################################################
         # dispatch income, 即時備轉收益 = (容量費 + 效能費) × 服務品質指標 ＋ 電能費
@@ -474,20 +507,20 @@ def optimize(df_load, df_pv, max_sec, data_freq,
         # total revenue
         model.add_constr(revenue == (income - cost))
         model.objective = maximize(revenue)
-        
+
         #### Other given setting and aux var
         ################################################################################
         # no power from PV to Grid/ESS directly
         for i in range(n):
             model.add_constr(p_pv_es[i] == 0) #### 無饋線
             model.add_constr(p_pv_g[i] == 0) #### 目前為全額躉售
-        
+
         # total power from grid (aux for visulization)
         for i in range(n):
             model.add_constr(total_g_f[i] == p_g_f[i] + dummy_g_f[i])
             model.add_constr(total_g_es[i] == aux_p_g_es[i] + aux_dummy_g_es[i])
             model.add_constr(total_g[i] == total_g_f[i] + total_g_es[i])
-            
+
         # total excessive power (aux for visulization)
         for i in range(n):
             model.add_constr(total_dummy[i] == dummy_g_1[i] + dummy_g_2[i])
@@ -512,7 +545,7 @@ def optimize(df_load, df_pv, max_sec, data_freq,
 
             report.append(('效能費', effectiveness_income.x))
             if effectiveness_income.x is None:
-                report.append(('效能費(服務品質指標)', None))            
+                report.append(('效能費(服務品質指標)', None))
             else:
                 report.append(('效能費(服務品質指標)', effectiveness_income.x * service_quality_index))
 
@@ -575,7 +608,7 @@ def optimize(df_load, df_pv, max_sec, data_freq,
                         else:
                             result[k] = [round(val, 4) for val in l]
             df_result = pd.DataFrame(result)
-            
+
             return status.name, df_report, df_result
         else:
             return status.name, pd.DataFrame(), pd.DataFrame()
@@ -586,7 +619,7 @@ def sidebar_bg(filepath):
 
         st.sidebar.markdown(
             f"""
-            <div style="display:table; margin-top:-28%; margin-left:-2%; 
+            <div style="display:table; margin-top:-28%; margin-left:-2%;
                         font-family:'Source Sans Pro', sans-serif; margin-bottom: -1rem; color: rgb(163, 168, 184); font-size: 14px;">
                 <img src="data:image/png;base64,{data}" width="100" height="100">
                 <p style="font-family:'Source Sans Pro', sans-serif; color: rgb(163, 168, 184); font-size: 14px;">
@@ -595,7 +628,7 @@ def sidebar_bg(filepath):
             </div>
             """,
             # f"""
-            # <div style="display:table; margin-top:-32%; margin-left:-2%; 
+            # <div style="display:table; margin-top:-32%; margin-left:-2%;
             # font-family:'Source Sans Pro', sans-serif; margin-bottom: -1rem; color: rgb(163, 168, 184); font-size: 14px;">
             #     <img src="data:image/png;base64,{data}" width="60" height="60">
             #     <p style="font-family:'Source Sans Pro', sans-serif; margin-bottom: -1rem; color: rgb(163, 168, 184); font-size: 14px;">
@@ -603,7 +636,7 @@ def sidebar_bg(filepath):
             #     </p>
             # </div>
             # """,
-            
+
             # f"""
             # <div style="display:table; margin-top:-32%; margin-left:-2%;">
             #     <img src="data:image/png;base64,{data}" width="60" height="60">
@@ -672,7 +705,7 @@ st.markdown("<style>.row-widget.stButton {text-align: center;}</style>", unsafe_
 
 
 
-# ; 
+# ;
 # ;color:white;font-size:20px;height:3em;width:30em;border-radius:10px 10px 10px 10px;
 
  # ("visible" or "hidden" or "collapsed")
@@ -730,22 +763,22 @@ input_soc_init = exp_param_3.number_input(label='初始SOC(%)', value=95, step=1
 cb_opt_soc_init = exp_param_3.checkbox(label='系統建議初始SOC', value=False, help=description['opt_soc_init'])
 input_soc_end = exp_param_3.number_input(label='結束SOC(%)', value=20, step=1, min_value=0, max_value=100, help=description['soc_end'])
 cb_opt_soc_end = exp_param_3.checkbox(label='系統建議結束SOC', value=False, help=description['opt_soc_end'])
-input_ess_degradation_cost_per_kwh_discharged = exp_param_3.number_input(label='放電耗損成本(每kWh)', value=10.00, step=1.0, format="%.2f", 
+input_ess_degradation_cost_per_kwh_discharged = exp_param_3.number_input(label='放電耗損成本(每kWh)', value=10.00, step=1.0, format="%.2f",
                                                                          help=description['ess_degradation_cost_per_kwh_discharged'])
 
 ## Production-related setting
 exp_param_4 = form.expander('生產相關')
-input_factory_profit_per_kwh = exp_param_4.number_input(label='工廠生產利潤(每使用一度電)', value=5.00, step=1.0, format="%.2f", 
+input_factory_profit_per_kwh = exp_param_4.number_input(label='工廠生產利潤(每使用一度電)', value=5.00, step=1.0, format="%.2f",
                                                         help=description['factory_profit_per_kwh'])
 
 ## Trading-related setting
 exp_param_5 = form.expander('輔助服務投標相關')
 # input_tendered_cap = exp_param_5.number_input(label='投標容量(kWh)', value=1200, step=100, help=description['tendered_cap'])
-# input_clearing_price_per_mwh = exp_param_5.number_input(label='日前即時備轉容量結清價格(每mWh)', value=350.00, step=5.0, format="%.2f", 
+# input_clearing_price_per_mwh = exp_param_5.number_input(label='日前即時備轉容量結清價格(每mWh)', value=350.00, step=5.0, format="%.2f",
                                                         # help=description['clearing_price_per_mwh'])
 input_exec_rate = exp_param_5.number_input(label='執行率(%)', value=95, step=1, min_value=0, max_value=100, help=description['exec_rate'])
 sb_effectiveness_level = exp_param_5.selectbox(label='效能級數', options=[0, 1, 2, 3], index=1, help=description['effectiveness_level'])
-# input_DA_margin_price_per_mwh = exp_param_5.number_input(label='日前電能邊際價格(每mWh)', value=4757.123, step=0.25, format="%.3f", 
+# input_DA_margin_price_per_mwh = exp_param_5.number_input(label='日前電能邊際價格(每mWh)', value=4757.123, step=0.25, format="%.3f",
                                                          # help=description['DA_margin_price_per_mwh'])
 # input_dispatch_ratio = exp_param_5.number_input(label='預估調度比例(%)', value=60, step=1, min_value=0, max_value=100, help=description['dispatch_ratio'])
 ## Scenario setting
@@ -753,17 +786,17 @@ exp_param_6 = form.expander('投標情境設定')
 cb_opt_bid = exp_param_6.checkbox(label='系統建議投標時段', value=True, help=description['opt_bid'])
 cb_opt_tendered_cap = exp_param_6.checkbox(label='系統建議投標容量', value=True, help=description['opt_tendered_cap'])
 cb_relax_tendered_step = exp_param_6.checkbox(label='放鬆投標單位限制', value=False, help=description['relax_tendered_step'])
-input_tendered_ub = exp_param_6.number_input(label='投標容量上限(mWh)', value=1.200, step=0.100, min_value=0.000, max_value=100.000, format="%.3f", 
+input_tendered_ub = exp_param_6.number_input(label='投標容量上限(mWh)', value=1.200, step=0.100, min_value=0.000, max_value=100.000, format="%.3f",
                                              help=description['tendered_ub'])
-input_tendered_lb = exp_param_6.number_input(label='投標容量下限(mWh)', value=1.000, step=0.100, min_value=1.000, max_value=100.000, format="%.3f", 
+input_tendered_lb = exp_param_6.number_input(label='投標容量下限(mWh)', value=1.000, step=0.100, min_value=1.000, max_value=100.000, format="%.3f",
                                              help=description['tendered_lb'])
-ed_bid_init = pd.DataFrame({'bid': [False]*24, 'win': [True]*24, 'dispatch': [True]*24, 
-                            'tendered_cap(mWh)': [1.2]*24, 'dispatch_ratio(%)': [60]*24, 
+ed_bid_init = pd.DataFrame({'bid': [False]*24, 'win': [True]*24, 'dispatch': [True]*24,
+                            'tendered_cap(mWh)': [1.2]*24, 'dispatch_ratio(%)': [60]*24,
                             'clearing_price(mWh)': [350.00]*24, 'marginal_price(mWh)': [4757.123]*24}) #, 'time':range(24)
 # ed_bid_init = ed_bid_init.set_index('time')
 txt_ed_bid = exp_param_6.text('情境設定表格', help=description['txt_ed_bid'])
 ed_bid = exp_param_6.data_editor(ed_bid_init, use_container_width=True)
-
+# pd.DataFrame.from_dict(s["ed_bid"]["data"]).iloc[0, 6]
 ## Transmission-related setting
 exp_param_7 = form.expander('電力輸送相關')
 input_limit_g_es_p = exp_param_7.number_input(label='儲能機組充電功率上限(kW)', value=1500, step=100, help=description['limit_g_es_p'])
@@ -789,25 +822,25 @@ if upload_load is not None:
         # save data to session state
         st.session_state['data_load'] = df.copy()
         df = df.set_index('time')
-        
+
         # # create expander container
         # expander = exp_load.expander("See Table and Figure")
         # col_upload[0].markdown("檢視圖表")
-        
+
         # fig
         fig_load = make_data_plot(df, title='')
         col_upload[0].plotly_chart(fig_load, use_container_width=True)
-        
+
         # translation
         df = df.rename(columns={'time':'時間', 'value':'負載量(kWh)'})
         # table
         col_upload[0].dataframe(df, use_container_width=True)
-        
+
     except Exception as e:
         col_upload[0].write(f'Error while reading file: {upload_load.name}, {e}')
 else:
     st.session_state['data_load'] = None
-    
+
 # PV file upload
 if upload_pv is not None:
     col_upload[1].subheader(upload_pv.name)
@@ -817,20 +850,20 @@ if upload_pv is not None:
         # save data to session state
         st.session_state['data_pv'] = df.copy()
         df = df.set_index('time')
-        
+
         # # create expander container
         # expander = exp_pv.expander("See Table and Figure")
         # col_upload[1].markdown("檢視圖表")
-        
+
         # fig
         fig_pv = make_data_plot(df, title='')
         col_upload[1].plotly_chart(fig_pv, use_container_width=True)
-        
+
         # translation
         df = df.rename(columns={'time':'時間', 'value':'發電量(kWh)'})
         # table
         col_upload[1].dataframe(df, use_container_width=True)
-        
+
     except Exception as e:
         col_upload[1].write(f'Error while reading file: {upload_pv.name}, {e}')
 else:
@@ -850,46 +883,46 @@ if btn_opt or st.session_state['optimization_count'] > 0:
 
         ## verify settings
         placeholder_warning = st.empty()
-        
+
         # SOC setting
         if not (input_lb < input_ub and input_lb <= input_soc_init <= input_ub and input_lb <= input_soc_end <= input_ub):
             placeholder_warning.warning('Check SOC boundary setting.', icon="⚠️")
             st.stop()
-        
+
         # trading-related rule
         if not verify_bd_rule(ed_bid, opt_bid=cb_opt_bid):
             placeholder_warning.warning('Check trading senario setting is correct.', icon="⚠️")
             st.stop()
         # tendered capacity
         if not cb_opt_tendered_cap:
-            if not all([verify_tendered_capacity_integrity(ed_bid, relax=cb_relax_tendered_step), 
-                        verify_tendered_capacity_in_bound(ed_bid, lb=input_tendered_lb, ub=input_tendered_ub), 
+            if not all([verify_tendered_capacity_integrity(ed_bid, relax=cb_relax_tendered_step),
+                        verify_tendered_capacity_in_bound(ed_bid, lb=input_tendered_lb, ub=input_tendered_ub),
                         verify_tendered_capacity_non_negative(ed_bid)]):
                 placeholder_warning.warning('Check tendered capacity setting is correct.(non-negativity / integrity / not in bound)', icon="⚠️")
                 st.stop()
-        
+
         # optimize
         # try:
         # update status on web interface
         btn_opt = placeholder_btn.form_submit_button(label='Optimizing...')
         # optimize
-        status, df_report, df_result = optimize(df_load=df_load, df_pv=df_pv, max_sec=input_max_sec, data_freq=sb_data_freq, 
-                                                c_cap=input_c_cap, basic_tariff_per_kwh=input_basic_tariff_per_kwh, summer=cb_summer, e_cap=input_e_cap, 
-                                                soc_init=input_soc_init, opt_soc_init=cb_opt_soc_init, soc_end=input_soc_end, opt_soc_end=cb_opt_soc_end, 
-                                                lb=input_lb, ub=input_ub, 
-                                                ess_degradation_cost_per_kwh_discharged=input_ess_degradation_cost_per_kwh_discharged, 
-                                                factory_profit_per_kwh=input_factory_profit_per_kwh, 
-                                                tendered_cap=ed_bid['tendered_cap(mWh)'], clearing_price_per_mwh=ed_bid['clearing_price(mWh)'], 
-                                                exec_rate=input_exec_rate, effectiveness_level=sb_effectiveness_level, 
-                                                DA_margin_price_per_mwh=ed_bid['marginal_price(mWh)'], 
-                                                dispatch_ratio=ed_bid['dispatch_ratio(%)'], 
-                                                opt_bid=cb_opt_bid, opt_tendered_cap=cb_opt_tendered_cap, relax_tendered_step=cb_relax_tendered_step, 
-                                                tendered_ub=input_tendered_ub, tendered_lb=input_tendered_lb, 
-                                                bid=ed_bid['bid'].tolist(), bid_win=ed_bid['win'].tolist(), dispatch=ed_bid['dispatch'].tolist(), 
-                                                limit_g_es_p=input_limit_g_es_p, 
-                                                limit_es_p=input_limit_es_p, 
-                                                limit_g_p=input_limit_g_p, 
-                                                limit_pv_p=input_limit_pv_p, 
+        status, df_report, df_result = optimize(df_load=df_load, df_pv=df_pv, max_sec=input_max_sec, data_freq=sb_data_freq,
+                                                c_cap=input_c_cap, basic_tariff_per_kwh=input_basic_tariff_per_kwh, summer=cb_summer, e_cap=input_e_cap,
+                                                soc_init=input_soc_init, opt_soc_init=cb_opt_soc_init, soc_end=input_soc_end, opt_soc_end=cb_opt_soc_end,
+                                                lb=input_lb, ub=input_ub,
+                                                ess_degradation_cost_per_kwh_discharged=input_ess_degradation_cost_per_kwh_discharged,
+                                                factory_profit_per_kwh=input_factory_profit_per_kwh,
+                                                tendered_cap=ed_bid['tendered_cap(mWh)'], clearing_price_per_mwh=ed_bid['clearing_price(mWh)'],
+                                                exec_rate=input_exec_rate, effectiveness_level=sb_effectiveness_level,
+                                                DA_margin_price_per_mwh=ed_bid['marginal_price(mWh)'],
+                                                dispatch_ratio=ed_bid['dispatch_ratio(%)'],
+                                                opt_bid=cb_opt_bid, opt_tendered_cap=cb_opt_tendered_cap, relax_tendered_step=cb_relax_tendered_step,
+                                                tendered_ub=input_tendered_ub, tendered_lb=input_tendered_lb,
+                                                bid=ed_bid['bid'].tolist(), bid_win=ed_bid['win'].tolist(), dispatch=ed_bid['dispatch'].tolist(),
+                                                limit_g_es_p=input_limit_g_es_p,
+                                                limit_es_p=input_limit_es_p,
+                                                limit_g_p=input_limit_g_p,
+                                                limit_pv_p=input_limit_pv_p,
                                                 loss_coef=input_loss_coef, bulk_tariff_per_kwh=input_bulk_tariff_per_kwh)
 
         # set dataframe index
@@ -930,9 +963,7 @@ if btn_opt or st.session_state['optimization_count'] > 0:
         text_opt_status = placeholder_status.text(f'Status : {status}', help=description['status'])
         # developing text
         st.caption(f"Opimization count : {st.session_state['optimization_count']}")
-        
+
         # except Exception as e:
         #     btn_opt = placeholder_btn.form_submit_button(label=' Optimize ')
         #     st.write(f'Error while optimizing: {e}')
-
-

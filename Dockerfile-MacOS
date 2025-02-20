@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y nano wget git build-essential pkgconf
 #RUN apt update && apt upgrade
 #RUN apt install wget
 
-RUN mkdir /code
-COPY . /code
+RUN mkdir /deploy
+COPY . /deploy
 
 RUN mkdir CBC
 WORKDIR ./CBC
@@ -20,10 +20,10 @@ WORKDIR ./CBC
 RUN wget https://raw.githubusercontent.com/coin-or/coinbrew/master/coinbrew
 RUN chmod u+x coinbrew
 RUN ./coinbrew fetch Cbc@master
-RUN ./coinbrew build Cbc 
+RUN ./coinbrew build Cbc
 RUN cp /CBC/dist/lib/libCbc.so /usr/local/lib/python3.11/site-packages/mip/libraries/cbc-c-linux-x86-64.so
 
-WORKDIR /code
+WORKDIR /deploy
 
-CMD ["/bin/bash", "-c", "cd /code; streamlit run /code/web_example.py", "--server.fileWatcherType", "none"]
+CMD ["/bin/bash", "-c", "cd /deploy; streamlit run /deploy/server.py", "--server.fileWatcherType", "none"]
 #CMD ["/bin/bash"]

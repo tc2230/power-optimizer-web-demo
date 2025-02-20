@@ -2,14 +2,14 @@
 FROM python:3.11-slim
 
 # 在根目錄建立 mnt 資料夾
-RUN mkdir /init
+RUN mkdir /deploy
 
 # 將 Dockerfile 同一目錄下的所有檔案(包含 requirements.txt 和 main.py) 複製到 container 中的 /code 資料夾
 ## COPY <source_file_path> <destination_file_path>
-COPY ./* /init
+COPY ./* /deploy
 
 # 在建立 container 時執行 "pip install" 指令，安裝 requirement.txt 中的內容
-RUN pip install --no-cache-dir --upgrade -r /init/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /deploy/requirements.txt
 #RUN pip install --force-reinstall 'requests<2.29.0' 'urllib3<2.0'
 
 # 也可以直接把要安裝的工具寫在Dockerfile中
@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir --upgrade -r /init/requirements.txt
 RUN apt-get update && apt-get install nano
 
 # 改變工作目錄
-WORKDIR /init
+WORKDIR /deploy
 
 
 # container 被開啟時，預設要執行的指令

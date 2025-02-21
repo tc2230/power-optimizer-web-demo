@@ -21,22 +21,20 @@ st.markdown("<style>.row-widget.stButton {text-align: center;}</style>", unsafe_
 
 class DataService:
     """Handles data loading and caching operations"""
+    def __init__(self):
+        pass
 
-    @staticmethod
-    @st.cache_resource
-    def load_sample_data(data_dir: str = "./data") -> Dict[str, pd.DataFrame]:
-        """Load and cache data from CSV files"""
+    def load_data(self, data_dir: str) -> Dict[str, pd.DataFrame]:
+        """Load data from CSV files"""
         files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
         sample_data_ref = {
             f.replace(".csv", ""): pd.read_csv(os.path.join(data_dir, f)) for f in files
             }
         return sample_data_ref
 
-    @staticmethod
-    @st.cache_resource
-    def load_default_params(data_dir: str = "./data") -> Dict[str, str]:
-        """Load and cache data from json files"""
-        with open(os.path.join(data_dir, 'params.json'), 'r') as file:
+    def load_params(self, data_dir: str, filename: str) -> Dict[str, str]:
+        """Load params from json files"""
+        with open(os.path.join(data_dir, filename), 'r') as file:
             params = json.load(file)
 
         # read json data as dataframe
@@ -44,6 +42,21 @@ class DataService:
 
         return params
 
+    @st.cache_resource
+    def load_sample_data(self) -> Dict[str, pd.DataFrame]:
+        """Load sample data from CSV files"""
+
+        data_dir = "./data"
+        return self.sample_data_ref()
+
+    @st.cache_resource
+    def load_default_params(self) -> Dict[str, str]:
+        """Load default params data from json files"""
+
+        data_dir = "./data"
+        filename = "default_params.json"
+
+        return self.load_params(data_dir, filename)
 
 class ModelBuilder:
     def __init__(self):
@@ -512,3 +525,6 @@ class Optimizer:
 
     def optimize(self):
         pass
+
+class UIHandler:
+    """Base class for UI styling and components"""

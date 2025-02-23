@@ -73,7 +73,7 @@ class DataService:
 
         return params
 
-    def load_data(self, data_dir: str = "./data") -> Dict[str, pd.DataFrame]:
+    def load_data(self, data_dir: str) -> Dict[str, pd.DataFrame]:
         """Load data from CSV files"""
         
         files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
@@ -82,7 +82,7 @@ class DataService:
             }
         return sample_data_ref
 
-    def load_params(self, data_dir: str = "./data", params_filename: str = "default_params.json") -> Dict[str, str]:
+    def load_params(self, data_dir: str, params_filename: str) -> Dict[str, str]:
         """Load params from json files"""
         
         with open(os.path.join(data_dir, params_filename), 'r') as file:
@@ -98,7 +98,13 @@ class ModelBuilder:
         self.model = Model()
         pass
 
-    def apply_config(self, data, params: dict):
+    def set_data(self, data):
+        self.data = data
+    
+    def set_params(self, params: dict):
+        self.params = params
+
+    def _apply_config(self, data, params: dict):
         pass
 
     def _add_vars(self):
@@ -127,12 +133,6 @@ class ESSModelBuilder(ModelBuilder):
 
         # ### load default params
         # self.params = params
-
-    def set_data(self, data):
-        self.data = data
-    
-    def set_params(self, params: dict):
-        self.params = params
 
     def _apply_config(self):
         # apply parameter and data
@@ -594,7 +594,7 @@ class Optimizer:
 
 # class UIHandler:
 #     """Base class for UI styling and components"""
-
+# User --[data, params]--> Optimizer --[data, params]--> Model Builder: build(), optimize() --[result]--> Optimizer --[result, plots]--> User
 if __name__ == "__main__":
     data = DataService.load_sample_data()
     params = DataService.load_sample_params()

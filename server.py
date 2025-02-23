@@ -19,44 +19,79 @@ from plotly.subplots import make_subplots
 st.set_page_config(page_title='Power Optimizer test(Cht)', layout="wide", page_icon='./img/favicon.png')
 st.markdown("<style>.row-widget.stButton {text-align: center;}</style>", unsafe_allow_html=True)
 
+
+def get_service_quality_index(exec_rate=95):
+    if exec_rate >= 95:
+        return 1.0
+    elif exec_rate >= 85:
+        return 0.7
+    elif exec_rate >= 70:
+        return 0
+    else:
+        return -240
+
+def get_effectiveness_price(level=0):
+    if level == 1:
+        return 100 # per mwh
+    elif level == 2:
+        return 60
+    elif level == 3:
+        return 40
+    else:
+        return 0
+
 class DataService:
     """Handles data loading and caching operations"""
-    def __init__(self):
-        pass
+    def __init__(self, data_dir: str = "./data", params_filename: str = "default_params.json"):
+        self.data_dir = data_dir
+        self.params_filename = params_filename
 
-    def load_data(self, data_dir: str) -> Dict[str, pd.DataFrame]:
-        """Load data from CSV files"""
+    @staticmethod
+    @st.cache_data
+    def load_sample_data() -> Dict[str, pd.DataFrame]:
+        """Load sample data from CSV files"""
+        
+        data_dir = "./data"
         files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
         sample_data_ref = {
-            f.replace(".csv", ""): pd.read_csv(os.path.join(data_dir, f)) for f in files
+            f.replace(".csv", "").replace("sample_", ""): pd.read_csv(os.path.join(data_dir, f)) for f in files
             }
         return sample_data_ref
 
-    def load_params(self, data_dir: str, filename: str) -> Dict[str, str]:
-        """Load params from json files"""
-        with open(os.path.join(data_dir, filename), 'r') as file:
-            params = json.load(file)
+    @staticmethod
+    @st.cache_data
+    def load_sample_params() -> Dict[str, str]:
+        """Load sample params from json files"""
 
+        data_dir = "./data"
+        params_filename = "default_params.json"
+        with open(os.path.join(data_dir, params_filename), 'r') as file:
+            params = json.load(file)
+        
         # read json data as dataframe
         params["ed_bid"]["data"] = pd.DataFrame.from_dict(params["ed_bid"]["data"]).copy()
 
         return params
 
-    @st.cache_resource
-    def load_sample_data(self) -> Dict[str, pd.DataFrame]:
-        """Load sample data from CSV files"""
+    def load_data(self, data_dir: str = "./data") -> Dict[str, pd.DataFrame]:
+        """Load data from CSV files"""
+        
+        files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
+        sample_data_ref = {
+            f.replace(".csv", "").replace("sample_", ""): pd.read_csv(os.path.join(data_dir, f)) for f in files
+            }
+        return sample_data_ref
 
-        data_dir = "./data"
-        return self.sample_data_ref()
+    def load_params(self, data_dir: str = "./data", params_filename: str = "default_params.json") -> Dict[str, str]:
+        """Load params from json files"""
+        
+        with open(os.path.join(data_dir, params_filename), 'r') as file:
+            params = json.load(file)
+        
+        # read json data as dataframe
+        params["ed_bid"]["data"] = pd.DataFrame.from_dict(params["ed_bid"]["data"]).copy()
 
-    @st.cache_resource
-    def load_default_params(self) -> Dict[str, str]:
-        """Load default params data from json files"""
-
-        data_dir = "./data"
-        filename = "default_params.json"
-
-        return self.load_params(data_dir, filename)
+        return params
 
 class ModelBuilder:
     def __init__(self):
@@ -66,39 +101,44 @@ class ModelBuilder:
     def apply_config(self, data, params: dict):
         pass
 
-    def add_vars(self):
+    def _add_vars(self):
         pass
 
-    def add_constraints(self):
+    def _add_constraints(self):
         pass
 
-    def add_objectives(self):
+    def _add_objectives(self):
         pass
 
     def build(self):
-        # self.add_vars()
-        # self.add_objectives()
-        # self.add_constraints()
+        # self._add_vars()
+        # self._add_objectives()
+        # self._add_constraints()
         return self.model
 
 class ESSModelBuilder(ModelBuilder):
-    def __init__(self, data, params: dict):
+    # def __init__(self, data, params: dict):
+    def __init__(self):
         super().__init__()
 
-        ### load default data
-        self.df_load = data["load"]
-        self.df_pv = data["pv"]
+        # ### load default data
+        # self.df_load = data["load"]
+        # self.df_pv = data["pv"]
 
-        ### load default params
-        self.params = params
+        # ### load default params
+        # self.params = params
 
-    def apply_config(self, data, params: dict):
-        # apply parameter and data
+    def set_data(self, data):
         self.data = data
+    
+    def set_params(self, params: dict):
         self.params = params
 
-        df_load = data["load"]
-        df_pv = data["pv"]
+    def _apply_config(self):
+        # apply parameter and data
+        df_load = self.data["load"]
+        df_pv = self.data["power"]
+        params = self.params
 
         self.data_freq = params["sb_data_freq"]["options"][params["sb_data_freq"]["index"]]
         self.max_sec = params["input_max_sec"]["value"]
@@ -148,13 +188,13 @@ class ESSModelBuilder(ModelBuilder):
         ### energy charging rate (111/7)
         if self.summer:
             # summer charging rate
-            p1 = np.array([1.58]*int(n*(15/48))) # 0000-0730
-            p2 = np.array([3.54]*int(n*(5/48))) # 0730-1000
-            p3 = np.array([5.31]*int(n*(4/48))) # 1000-1200
-            p4 = np.array([3.54]*int(n*(2/48))) # 1200-1300
-            p5 = np.array([5.31]*int(n*(8/48))) # 1300-1700
-            p6 = np.array([3.54]*int(n*(11/48))) # 1700-2230
-            p7 = np.array([1.58]*int(n*(3/48))) # 2230-0000
+            p1 = np.array([1.58]*int(self.n*(15/48))) # 0000-0730
+            p2 = np.array([3.54]*int(self.n*(5/48))) # 0730-1000
+            p3 = np.array([5.31]*int(self.n*(4/48))) # 1000-1200
+            p4 = np.array([3.54]*int(self.n*(2/48))) # 1200-1300
+            p5 = np.array([5.31]*int(self.n*(8/48))) # 1300-1700
+            p6 = np.array([3.54]*int(self.n*(11/48))) # 1700-2230
+            p7 = np.array([1.58]*int(self.n*(3/48))) # 2230-0000
             self.price = np.hstack([p1, p2, p3, p4, p5, p6, p7])
 
             if self.data_freq == 60:
@@ -169,9 +209,9 @@ class ESSModelBuilder(ModelBuilder):
                                  [1.58]*1 ) # 2300-0000
         else:
             # other
-            p1 = np.array([1.50]*int(n*(15/48))) # 0000-0730
-            p2 = np.array([3.44]*int(n*(30/48))) # 0730-2230
-            p3 = np.array([1.50]*int(n*(3/48))) # 2230-0000
+            p1 = np.array([1.50]*int(self.n*(15/48))) # 0000-0730
+            p2 = np.array([3.44]*int(self.n*(30/48))) # 0730-2230
+            p3 = np.array([1.50]*int(self.n*(3/48))) # 2230-0000
             self.price = np.hstack([p1, p2, p3])
 
             if self.data_freq == 60:
@@ -480,7 +520,7 @@ class ESSModelBuilder(ModelBuilder):
 
         # factory income
         factory_income = self.model.add_var(name='factory_income', var_type=CONTINUOUS, lb=float('-Inf'), ub=float('Inf'))
-        self.model.add_constr(factory_income == xsum( self.factory_profit_per_kwh*load[i]/self.consecutive_n for i in range(n) ))
+        self.model.add_constr(factory_income == xsum( self.factory_profit_per_kwh*self.load[i]/self.consecutive_n for i in range(n) ))
 
         # PV income
         pv_income = self.model.add_var(name='PV_income', var_type=CONTINUOUS, lb=float('-Inf'), ub=float('Inf'))
@@ -510,6 +550,8 @@ class ESSModelBuilder(ModelBuilder):
         return self
 
     def build(self):
+        self.model = Model()
+        self._apply_config()
         self._add_var()
         self._set_constraints()
         self._set_objectives()
@@ -517,14 +559,50 @@ class ESSModelBuilder(ModelBuilder):
 
 class Optimizer:
     def __init__(self, data_service: DataService, model_builder: ModelBuilder):
+        # init data service and data/params
         self.data_service = data_service
+        self.data = data_service.load_sample_data()
+        self.params = data_service.load_sample_params()
+
+        # build default model
         self.model_builder = model_builder
+        self.model = self.model_builder.build()
+
+    def set_data(self, data):
+        # receive input from UI
+        # set input info to builder
+        pass
+
+    def set_params(self, params):
+        # receive input from UI
+        # set input info to builder
+        pass
 
     def add(self):
+        # for customize contraints or vars or objs
         pass
 
     def optimize(self):
+        # 1. apply config/params updated from UI through set functions to model_builder
+        # 2. build model
+            # just self.model_builder.build() since changes already set through set functions
+        
+        # 3. call optimize functions
+
+        # 4. return result
         pass
 
-class UIHandler:
-    """Base class for UI styling and components"""
+# class UIHandler:
+#     """Base class for UI styling and components"""
+
+if __name__ == "__main__":
+    data = DataService.load_sample_data()
+    params = DataService.load_sample_params()
+    builder = ESSModelBuilder()
+
+    builder.set_data(data=data)
+    builder.set_params(params=params)
+    model = builder.build()
+    result = model.optimize(max_seconds=builder.max_sec)
+
+    print(result)

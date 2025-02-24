@@ -15,11 +15,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# set layout
-st.set_page_config(page_title='Power Optimizer test(Cht)', layout="wide", page_icon='./img/favicon.png')
-st.markdown("<style>.row-widget.stButton {text-align: center;}</style>", unsafe_allow_html=True)
-
-
 def get_service_quality_index(exec_rate=95):
     if exec_rate >= 95:
         return 1.0
@@ -40,6 +35,26 @@ def get_effectiveness_price(level=0):
     else:
         return 0
 
+def verify_tendered_capacity_integrity(ed_bid, relax=0):
+    if not relax:
+        return all([(10*i).is_integer() for i in ed_bid['tendered_cap(mWh)']])
+    return True
+
+def verify_tendered_capacity_in_bound(ed_bid, lb=0, ub=float('Inf')):
+    return all([lb <= i <= ub for i in ed_bid['tendered_cap(mWh)']])
+
+def verify_tendered_capacity_non_negative(ed_bid):
+    return all([i >= 0 for i in ed_bid['tendered_cap(mWh)']])
+
+def verify_bid_rule(df, opt_bid=1):
+    if opt_bid:
+        return all([bw >= d for bw, d in zip(df['win'], df['dispatch'])])
+    else:
+        row = all([bw >= d for bw, d in zip(df['win'], df['dispatch'])])
+        tmp = df['bid']*df['win']*df['dispatch']
+        dispatch = all([tmp[i:i+3].sum() <= 1 for i in range(len(df)-2)])
+        return all([row, dispatch])
+
 class DataService:
     """Handles data loading and caching operations"""
     def __init__(self, data_dir: str = "./data", params_filename: str = "default_params.json"):
@@ -50,7 +65,7 @@ class DataService:
     @st.cache_data
     def load_sample_data() -> Dict[str, pd.DataFrame]:
         """Load sample data from CSV files"""
-        
+
         data_dir = "./data"
         files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
         sample_data_ref = {
@@ -67,7 +82,7 @@ class DataService:
         params_filename = "default_params.json"
         with open(os.path.join(data_dir, params_filename), 'r') as file:
             params = json.load(file)
-        
+
         # read json data as dataframe
         params["ed_bid"]["data"] = pd.DataFrame.from_dict(params["ed_bid"]["data"]).copy()
 
@@ -75,7 +90,7 @@ class DataService:
 
     def load_data(self, data_dir: str) -> Dict[str, pd.DataFrame]:
         """Load data from CSV files"""
-        
+
         files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
         sample_data_ref = {
             f.replace(".csv", "").replace("sample_", ""): pd.read_csv(os.path.join(data_dir, f)) for f in files
@@ -84,27 +99,21 @@ class DataService:
 
     def load_params(self, data_dir: str, params_filename: str) -> Dict[str, str]:
         """Load params from json files"""
-        
+
         with open(os.path.join(data_dir, params_filename), 'r') as file:
             params = json.load(file)
-        
+
         # read json data as dataframe
         params["ed_bid"]["data"] = pd.DataFrame.from_dict(params["ed_bid"]["data"]).copy()
 
         return params
 
-class ModelBuilder:
+class MIPModelBuilder:
     def __init__(self):
-        self.model = Model()
         pass
 
-    def set_data(self, data):
-        self.data = data
-    
-    def set_params(self, params: dict):
-        self.params = params
-
-    def _apply_config(self, data, params: dict):
+    def update(self, data, params: dict):
+        # update params and aux from session state
         pass
 
     def _add_vars(self):
@@ -117,28 +126,23 @@ class ModelBuilder:
         pass
 
     def build(self):
+        # init model
+        # update params
         # self._add_vars()
         # self._add_objectives()
         # self._add_constraints()
-        return self.model
+        # return self.model
+        pass
 
-class ESSModelBuilder(ModelBuilder):
-    # def __init__(self, data, params: dict):
+class ESSModelBuilder(MIPModelBuilder):
     def __init__(self):
         super().__init__()
 
-        # ### load default data
-        # self.df_load = data["load"]
-        # self.df_pv = data["pv"]
-
-        # ### load default params
-        # self.params = params
-
-    def _apply_config(self):
+    def update(self):
         # apply parameter and data
-        df_load = self.data["load"]
-        df_pv = self.data["power"]
-        params = self.params
+        df_load = st.session_state["data"]["load"]
+        df_pv = st.session_state["data"]["pv"]
+        params = st.session_state["params"]
 
         self.data_freq = params["sb_data_freq"]["options"][params["sb_data_freq"]["index"]]
         self.max_sec = params["input_max_sec"]["value"]
@@ -199,14 +203,14 @@ class ESSModelBuilder(ModelBuilder):
 
             if self.data_freq == 60:
                 self.price = np.array([1.58]*7 + # 0000-0700
-                                 [2.56]*1 + # 0700-0800(mixed)
-                                 [3.54]*2 + # 0800-1000
-                                 [5.31]*2 + # 1000-1200
-                                 [3.54]*1 + # 1200-1300
-                                 [5.31]*4 + # 1300-1700
-                                 [3.54]*5 + # 1700-2200
-                                 [2.56]*1 + # 2200-2300(mixed)
-                                 [1.58]*1 ) # 2300-0000
+                                      [2.56]*1 + # 0700-0800(mixed)
+                                      [3.54]*2 + # 0800-1000
+                                      [5.31]*2 + # 1000-1200
+                                      [3.54]*1 + # 1200-1300
+                                      [5.31]*4 + # 1300-1700
+                                      [3.54]*5 + # 1700-2200
+                                      [2.56]*1 + # 2200-2300(mixed)
+                                      [1.58]*1 ) # 2300-0000
         else:
             # other
             p1 = np.array([1.50]*int(self.n*(15/48))) # 0000-0730
@@ -256,8 +260,8 @@ class ESSModelBuilder(ModelBuilder):
         self.e_end = self.e_cap*self.soc_end
 
         # ESS boundary
-        self.soc_lb = np.array([self.e_cap*self.lb for i in range(self.n)])
-        self.soc_ub = np.array([self.e_cap*self.ub for i in range(self.n)])
+        self.soc_lb = np.array([self.e_cap*self.lb]*self.n)
+        self.soc_ub = np.array([self.e_cap*self.ub]*self.n)
 
         ### Trading params
         self.tendered_cap = [v*10 for v in self.tendered_cap] # temporarily converted to integer level for usage of INTEGER variable type. Ex: 1.2 mWh --> 12.0
@@ -551,55 +555,408 @@ class ESSModelBuilder(ModelBuilder):
 
     def build(self):
         self.model = Model()
-        self._apply_config()
+        self.update()
         self._add_var()
         self._set_constraints()
         self._set_objectives()
-        return self.model
+        # return self
+        return self
 
-class Optimizer:
-    def __init__(self, data_service: DataService, model_builder: ModelBuilder):
-        # init data service and data/params
-        self.data_service = data_service
-        self.data = data_service.load_sample_data()
-        self.params = data_service.load_sample_params()
-
-        # build default model
-        self.model_builder = model_builder
-        self.model = self.model_builder.build()
-
-    def set_data(self, data):
-        # receive input from UI
-        # set input info to builder
+    def optimize(*args, **kwrgs):
+        ## return results
         pass
 
-    def set_params(self, params):
-        # receive input from UI
-        # set input info to builder
+# User --[data, params]--> Optimizer --[data, params]--> Model Builder: build(), optimize() --[result]--> Optimizer --[result, plots]--> User
+class UIHandler:
+    """Base class for UI styling and components"""
+    def __init__(self):
+        pass
+
+    def _update_session_state(self, component_name, key, value):
+        item = {k: v for k, v in st.session_state[component_name]}
+        item[key] = value
+        return item
+
+    # set background picture and caption at the top of sidebar
+    def set_sidebar_markdown(self, img_path, caption=None):
+        with open(img_path, "rb") as f:
+            data = base64.b64encode(f.read()).decode("utf-8")
+
+            st.sidebar.markdown(
+                f"""
+                <div style="display:table; margin-top:-28%; margin-left:-2%; font-family:'Source Sans Pro', sans-serif; margin-bottom: -1rem; color: rgb(163, 168, 184); font-size: 14px;">
+                    <img src="data:image/png;base64,{data}" width="100" height="100">
+                    <p style="font-family:'Source Sans Pro', sans-serif; color: rgb(163, 168, 184); font-size: 14px;">
+                        A dog saying "THIS IS FINE".
+                    </p>
+                </div>
+                """,
+                # f"""
+                # <div style="display:table; margin-top:-32%; margin-left:-2%; font-family:'Source Sans Pro', sans-serif; margin-bottom: -1rem; color: rgb(163, 168, 184); font-size: 14px;">
+                #     <img src="data:image/png;base64,{data}" width="60" height="60">
+                #     <p style="font-family:'Source Sans Pro', sans-serif; margin-bottom: -1rem; color: rgb(163, 168, 184); font-size: 14px;">
+                #         {caption}
+                #     </p>
+                # </div>
+                # """,
+
+                # f"""
+                # <div style="display:table; margin-top:-32%; margin-left:-2%;">
+                #     <img src="data:image/png;base64,{data}" width="60" height="60">
+                #     <p style="font-family:'Source Sans Pro', sans-serif; margin-bottom: -1rem; color: rgb(163, 168, 184); font-size: 14px;">
+                #         {caption}
+                #     </p>
+                # </div>
+                # """,
+                unsafe_allow_html=True,
+            )
+
+    def create_layout(self):
+        params = st.session_state["params"]
+
+        ### global streamlit config
+        st.set_page_config(page_title='Power Optimizer test(Cht)', layout="wide", page_icon='./img/favicon.png')
+        st.markdown("<style>.row-widget.stButton {text-align: center;}</style>", unsafe_allow_html=True) # for button css
+
+        ### Dashboard section
+        # page title
+        st.title('最佳化工具 Demo')
+
+        # expander for upload field
+        exp_upload = st.expander('資料上傳區域', expanded=True)
+        exp_upload.markdown('<p style="font-family:Source Sans Pro, sans-serif; font-size: 1.5rem; font-weight: bold;">於此處上傳資料</p>', unsafe_allow_html=True)
+        exp_upload.text('目前使用採樣週期為五分鐘的單日資料。')
+
+        col_upload = exp_upload.columns(2)
+
+        # Create data sections
+        upload_load = col_upload[0].file_uploader('工廠負載資料')
+        upload_power = col_upload[1].file_uploader('太陽能發電資料')
+
+        ### Sidebar section
+        # set sidebar picture
+        self.set_sidebar_markdown(img_path="./img/thisisfine.png")
+
+        ## form general setting
+        form = st.sidebar.form(key='Optimize', clear_on_submit=False)
+
+        # button
+        placeholder_btn = form.empty()
+        btn_opt = placeholder_btn.form_submit_button(
+            label='Optimize',
+            on_click=lambda: setattr(st.session_state, "zzzzzz", self._update_session_state("zzzzzz", "zzzzzz", "zzzzzz"))
+            )
+
+        # status
+        placeholder_status = form.empty()
+        text_opt_status = placeholder_status.text(
+            body=f"Status: {params["text_opt_status"]["body"]}",
+            help=params["text_opt_status"]["help"]
+            )
+        form.divider()
+
+        ## Parameter setting
+        # header
+        form.header('參數設定')
+
+        # optimization setting
+        exp_param_1 = form.expander('資料與求解參數')#, expanded=True
+        sb_data_freq = exp_param_1.selectbox(
+            label=params["sb_data_freq"]["label"],
+            options=params["sb_data_freq"]["options"],
+            index=params["sb_data_freq"]["index"],
+            help=params["sb_data_freq"]["help"],
+            on_change=None
+            )
+        input_max_sec = exp_param_1.number_input(
+            label=params["input_max_sec"]["label"],
+            value=params["input_max_sec"]["value"],
+            step=params["input_max_sec"]["step"],
+            help=params["input_max_sec"]["help"],
+            on_change=None
+            )
+
+        # Price-related setting
+        exp_param_2 = form.expander('電力價格相關')
+        input_c_cap = exp_param_2.number_input(
+            label=params["input_c_cap"]["label"],
+            value=params["input_c_cap"]["value"],
+            step=params["input_c_cap"]["step"],
+            help=params["input_c_cap"]["help"],
+            on_change=None
+            )
+        input_basic_tariff_per_kwh = exp_param_2.number_input(
+            label=params["input_basic_tariff_per_kwh"]["label"],
+            value=params["input_basic_tariff_per_kwh"]["value"],
+            step=params["input_basic_tariff_per_kwh"]["step"],
+            format=params["input_basic_tariff_per_kwh"]["format"],
+            help=params["input_basic_tariff_per_kwh"]["help"],
+            on_change=None
+            )
+        cb_summer = exp_param_2.checkbox(
+            label=params["cb_summer"]["label"],
+            value=params["cb_summer"]["value"],
+            help=params["cb_summer"]["help"],
+            on_change=None
+            )
+
+        # ESS-related setting
+        exp_param_3 = form.expander('儲能系統相關')
+        input_e_cap = exp_param_3.number_input(
+            label=params["input_e_cap"]["label"],
+            value=params["input_e_cap"]["value"],
+            step=params["input_e_cap"]["step"],
+            help=params["input_e_cap"]["help"],
+            on_change=None
+            )
+        input_ub = exp_param_3.number_input(
+            label=params["input_ub"]["label"],
+            value=params["input_ub"]["value"],
+            step=params["input_ub"]["step"],
+            min_value=params["input_ub"]["min_value"],
+            max_value=params["input_ub"]["max_value"],
+            help=params["input_ub"]["help"],
+            on_change=None
+            )
+        input_lb= exp_param_3.number_input(
+            label=params["input_lb"]["label"],
+            value=params["input_lb"]["value"],
+            step=params["input_lb"]["step"],
+            min_value=params["input_lb"]["min_value"],
+            max_value=params["input_lb"]["max_value"],
+            help=params["input_lb"]["help"],
+            on_change=None
+            )
+        input_soc_init = exp_param_3.number_input(
+            label=params["input_soc_init"]["label"],
+            value=params["input_soc_init"]["value"],
+            step=params["input_soc_init"]["step"],
+            min_value=params["input_soc_init"]["min_value"],
+            max_value=params["input_soc_init"]["max_value"],
+            help=params["input_soc_init"]["help"],
+            on_change=None
+            )
+        cb_opt_soc_init = exp_param_3.checkbox(
+            label=params["cb_opt_soc_init"]["label"],
+            value=params["cb_opt_soc_init"]["value"],
+            help=params["cb_opt_soc_init"]["help"],
+            on_change=None
+            )
+        input_soc_end = exp_param_3.number_input(
+            label=params["input_soc_end"]["label"],
+            value=params["input_soc_end"]["value"],
+            step=params["input_soc_end"]["step"],
+            min_value=params["input_soc_end"]["min_value"],
+            max_value=params["input_soc_end"]["max_value"],
+            help=params["input_soc_end"]["help"],
+            on_change=None
+            )
+        cb_opt_soc_end = exp_param_3.checkbox(
+            label=params["cb_opt_soc_end"]["label"],
+            value=params["cb_opt_soc_end"]["value"],
+            help=params["cb_opt_soc_end"]["help"],
+            on_change=None
+            )
+        input_ess_degradation_cost_per_kwh_discharged = exp_param_3.number_input(
+            label=params["input_ess_degradation_cost_per_kwh_discharged"]["label"],
+            value=params["input_ess_degradation_cost_per_kwh_discharged"]["value"],
+            step=params["input_ess_degradation_cost_per_kwh_discharged"]["step"],
+            format=params["input_ess_degradation_cost_per_kwh_discharged"]["format"],
+            help=params["input_ess_degradation_cost_per_kwh_discharged"]["help"],
+            on_change=None
+            )
+
+        # Production-related setting
+        exp_param_4 = form.expander('生產相關')
+        input_factory_profit_per_kwh = exp_param_4.number_input(
+            label=params["input_factory_profit_per_kwh"]["label"],
+            value=params["input_factory_profit_per_kwh"]["value"],
+            step=params["input_factory_profit_per_kwh"]["step"],
+            format=params["input_factory_profit_per_kwh"]["format"],
+            help=params["input_factory_profit_per_kwh"]["help"],
+            on_change=None
+            )
+
+        # Trading-related setting
+        exp_param_5 = form.expander('輔助服務投標相關')
+        # input_tendered_cap = exp_param_5.number_input(label='投標容量(kWh)', value=1200, step=100, help=description['tendered_cap'])
+        # input_clearing_price_per_mwh = exp_param_5.number_input(label='日前即時備轉容量結清價格(每mWh)', value=350.00, step=5.0, format="%.2f", help=description['clearing_price_per_mwh'])
+        input_exec_rate = exp_param_5.number_input(
+            label=params["input_exec_rate"]["label"],
+            value=params["input_exec_rate"]["value"],
+            step=params["input_exec_rate"]["step"],
+            min_value=params["input_exec_rate"]["min_value"],
+            max_value=params["input_exec_rate"]["max_value"],
+            help=params["input_exec_rate"]["help"],
+            on_change=None
+            )
+        sb_effectiveness_level = exp_param_5.selectbox(
+            label=params["sb_effectiveness_level"]["label"],
+            options=params["sb_effectiveness_level"]["options"],
+            index=params["sb_effectiveness_level"]["index"],
+            help=params["sb_effectiveness_level"]["help"],
+            on_change=None
+            )
+        # input_DA_margin_price_per_mwh = exp_param_5.number_input(label='日前電能邊際價格(每mWh)', value=4757.123, step=0.25, format="%.3f", help=description['DA_margin_price_per_mwh'])
+        # input_dispatch_ratio = exp_param_5.number_input(label='預估調度比例(%)', value=60, step=1, min_value=0, max_value=100, help=description['dispatch_ratio'])
+
+        # Scenario setting
+        exp_param_6 = form.expander('投標情境設定')
+        cb_opt_bid = exp_param_6.checkbox(
+            label=params["cb_opt_bid"]["label"],
+            value=params["cb_opt_bid"]["value"],
+            help=params["cb_opt_bid"]["help"],
+            on_change=None
+            )
+        cb_opt_tendered_cap = exp_param_6.checkbox(
+            label=params["cb_opt_tendered_cap"]["label"],
+            value=params["cb_opt_tendered_cap"]["value"],
+            help=params["cb_opt_tendered_cap"]["help"],
+            on_change=None
+            )
+        cb_relax_tendered_step = exp_param_6.checkbox(
+            label=params["cb_relax_tendered_step"]["label"],
+            value=params["cb_relax_tendered_step"]["value"],
+            help=params["cb_relax_tendered_step"]["help"],
+            on_change=None
+            )
+        input_tendered_ub = exp_param_6.number_input(
+            label=params["input_tendered_ub"]["label"],
+            value=params["input_tendered_ub"]["value"],
+            step=params["input_tendered_ub"]["step"],
+            min_value=params["input_tendered_ub"]["min_value"],
+            max_value=params["input_tendered_ub"]["max_value"],
+            format=params["input_tendered_ub"]["format"],
+            help=params["input_tendered_ub"]["help"],
+            on_change=None
+            )
+        input_tendered_lb = exp_param_6.number_input(
+            label=params["input_tendered_lb"]["label"],
+            value=params["input_tendered_lb"]["value"],
+            step=params["input_tendered_lb"]["step"],
+            min_value=params["input_tendered_lb"]["min_value"],
+            max_value=params["input_tendered_lb"]["max_value"],
+            format=params["input_tendered_lb"]["format"],
+            help=params["input_tendered_lb"]["help"],
+            on_change=None
+            )
+        txt_ed_bid = exp_param_6.text(
+            body=params["txt_ed_bid"]["body"],
+            help=params["txt_ed_bid"]["help"]
+            )
+        ed_bid = exp_param_6.data_editor(
+            data=params["ed_bid"]["data"],
+            use_container_width=params["ed_bid"]["use_container_width"]
+            )
+
+        # Transmission-related setting
+        exp_param_7 = form.expander('電力輸送相關')
+        input_limit_g_es_p = exp_param_7.number_input(
+            label=params["input_limit_g_es_p"]["label"],
+            value=params["input_limit_g_es_p"]["value"],
+            step=params["input_limit_g_es_p"]["step"],
+            help=params["input_limit_g_es_p"]["help"],
+            on_change=None
+            )
+        input_limit_es_p = exp_param_7.number_input(
+            label=params["input_limit_es_p"]["label"],
+            value=params["input_limit_es_p"]["value"],
+            step=params["input_limit_es_p"]["step"],
+            help=params["input_limit_es_p"]["help"],
+            on_change=None
+            )
+        input_limit_g_p = exp_param_7.number_input(
+            label=params["input_limit_g_p"]["label"],
+            value=params["input_limit_g_p"]["value"],
+            step=params["input_limit_g_p"]["step"],
+            help=params["input_limit_g_p"]["help"],
+            on_change=None
+            )
+        input_limit_pv_p = exp_param_7.number_input(
+            label=params["input_limit_pv_p"]["label"],
+            value=params["input_limit_pv_p"]["value"],
+            step=params["input_limit_pv_p"]["step"],
+            help=params["input_limit_pv_p"]["help"],
+            on_change=None
+            )
+        input_loss_coef = exp_param_7.number_input(
+            label=params["input_loss_coef"]["label"],
+            value=params["input_loss_coef"]["value"],
+            step=params["input_loss_coef"]["step"],
+            min_value=params["input_loss_coef"]["min_value"],
+            max_value=params["input_loss_coef"]["max_value"],
+            format=params["input_loss_coef"]["format"],
+            help=params["input_loss_coef"]["help"],
+            on_change=None
+            )
+
+        # PV-related setting
+        exp_param_8 = form.expander('太陽能發電機組相關')
+        input_bulk_tariff_per_kwh = exp_param_8.number_input(
+            label=params["input_bulk_tariff_per_kwh"]["label"],
+            value=params["input_bulk_tariff_per_kwh"]["value"],
+            step=params["input_bulk_tariff_per_kwh"]["step"],
+            format=params["input_bulk_tariff_per_kwh"]["format"],
+            help=params["input_bulk_tariff_per_kwh"]["help"],
+            on_change=None
+            )
+
+
+class PlotRenderer:
+    pass
+
+class Optimizer:
+    def __init__(self, data_service: DataService, model_builder: MIPModelBuilder, ui_handler: UIHandler):
+        # init data service and data/params
+        self.data_service = data_service
+        if "sample_data" not in st.session_state:
+            st.session_state["sample_data"] = data_service.load_sample_data()
+        if "sample_params" not in st.session_state:
+            st.session_state["sample_params"] = data_service.load_sample_params()
+        if "data" not in st.session_state:
+            st.session_state["data"] = st.session_state["sample_data"]
+        if "params" not in st.session_state:
+            st.session_state["params"] = st.session_state["sample_params"]
+
+        # init model builder
+        self.model_builder = model_builder
+        self.model_builder.update()
+
+        # UI handler
+        self.ui_handler = ui_handler
+
+    def set_state(self, key, value):
+        st.session_state[key] = value
+
+    def _initialize_session_state(self):
+        # init streamlit session state
+        # st.session_state["ui"] = {"input":{}, "select_box":{}, "check_box":{}, "editor":{}, "button":{}}
         pass
 
     def add(self):
-        # for customize contraints or vars or objs
+        # for customize constraints / vars / objs
         pass
 
     def optimize(self):
         # 1. apply config/params updated from UI through set functions to model_builder
         # 2. build model
             # just self.model_builder.build() since changes already set through set functions
-        
+
         # 3. call optimize functions
 
         # 4. return result
         pass
 
-# class UIHandler:
-#     """Base class for UI styling and components"""
-# User --[data, params]--> Optimizer --[data, params]--> Model Builder: build(), optimize() --[result]--> Optimizer --[result, plots]--> User
+
+
+
 if __name__ == "__main__":
     data = DataService.load_sample_data()
     params = DataService.load_sample_params()
     builder = ESSModelBuilder()
 
+    # Optimizer.set_data(data=data)
+    # Optimizer.set_params(params=params)
     builder.set_data(data=data)
     builder.set_params(params=params)
     model = builder.build()

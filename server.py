@@ -68,9 +68,15 @@ class DataService:
 
         data_dir = "./data"
         files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
-        sample_data_ref = {
-            f.replace(".csv", "").replace("sample_", ""): pd.read_csv(os.path.join(data_dir, f)) for f in files
+        
+        sample_data_ref = {}
+        for f in files:
+            key = f.replace(".csv", "").replace("sample_", "")
+            item = {
+                "filename": f,
+                "data": pd.read_csv(os.path.join(data_dir, f))
             }
+            sample_data_ref[key] = item
         return sample_data_ref
 
     @staticmethod
@@ -140,8 +146,8 @@ class ESSModelBuilder(MIPModelBuilder):
 
     def update(self):
         # apply parameter and data
-        df_load = st.session_state["data"]["load"]
-        df_pv = st.session_state["data"]["pv"]
+        df_load = st.session_state["data"]["load"]["data"]
+        df_pv = st.session_state["data"]["power"]["data"]
         params = st.session_state["params"]
 
         self.data_freq = params["sb_data_freq"]["options"][params["sb_data_freq"]["index"]]
@@ -559,7 +565,6 @@ class ESSModelBuilder(MIPModelBuilder):
         self._add_var()
         self._set_constraints()
         self._set_objectives()
-        # return self
         return self
 
     def optimize(*args, **kwrgs):
@@ -570,13 +575,8 @@ class ESSModelBuilder(MIPModelBuilder):
 class UIHandler:
     """Base class for UI styling and components"""
     def __init__(self):
-        pass
-
-    def _update_session_state(self, component_name, key, value):
-        item = {k: v for k, v in st.session_state[component_name]}
-        item[key] = value
-        return item
-
+        self.plot_client = PlotClient()
+        
     # set background picture and caption at the top of sidebar
     def set_sidebar_markdown(self, img_path, caption=None):
         with open(img_path, "rb") as f:
@@ -615,23 +615,63 @@ class UIHandler:
         params = st.session_state["params"]
 
         ### global streamlit config
-        st.set_page_config(page_title='Power Optimizer test(Cht)', layout="wide", page_icon='./img/favicon.png')
+        # st.set_page_config(page_title='Power Optimizer test(Cht)', layout="wide", page_icon='./img/favicon.png')
         st.markdown("<style>.row-widget.stButton {text-align: center;}</style>", unsafe_allow_html=True) # for button css
 
         ### Dashboard section
         # page title
-        st.title('最佳化工具 Demo')
+        self.title = st.title('最佳化工具 Demo')
 
         # expander for upload field
-        exp_upload = st.expander('資料上傳區域', expanded=True)
-        exp_upload.markdown('<p style="font-family:Source Sans Pro, sans-serif; font-size: 1.5rem; font-weight: bold;">於此處上傳資料</p>', unsafe_allow_html=True)
-        exp_upload.text('目前使用採樣週期為五分鐘的單日資料。')
+        self.exp_upload = st.expander('資料上傳區域', expanded=True)
+        self.exp_upload.markdown('<p style="font-family:Source Sans Pro, sans-serif; font-size: 1.5rem; font-weight: bold;">於此處上傳資料</p>', unsafe_allow_html=True)
+        self.exp_upload.text('目前使用採樣週期為五分鐘的單日資料。')
 
-        col_upload = exp_upload.columns(2)
+        self.col_upload = self.exp_upload.columns(2)
 
         # Create data sections
-        upload_load = col_upload[0].file_uploader('工廠負載資料')
-        upload_power = col_upload[1].file_uploader('太陽能發電資料')
+        self.upload_load = self.col_upload[0].file_uploader('工廠負載資料')
+        self.upload_power = self.col_upload[1].file_uploader('太陽能發電資料')
+
+        # update load data if file uploaded
+        if self.upload_load is not None:
+            # update session state
+            df = pd.read_csv(self.upload_load)
+            st.session_state['data']["load"]["data"] = df.copy()
+            st.session_state['data']["load"]["filename"] = self.upload_load.name
+
+        # plot load data
+        filename = st.session_state["data"]["load"]["filename"]
+        data = st.session_state["data"]["load"]["data"].set_index('time')
+        # subheader
+        self.col_upload[0].subheader(filename)
+        # plot
+        fig = self.plot_client.make_data_plot(data, title="")
+        self.col_upload[0].plotly_chart(fig, use_container_width=True)
+        # translation
+        data = data.rename(columns={'time':'時間', 'value':'負載量(kWh)'})
+        # table
+        self.col_upload[0].dataframe(data, use_container_width=True)
+
+        # update load data if file uploaded
+        if self.upload_power is not None:
+            # update session state
+            df = pd.read_csv(self.upload_power)
+            st.session_state['data']["power"]["data"] = df.copy()
+            st.session_state['data']["power"]["filename"] = self.upload_power.name
+        
+        # plot power data
+        filename = st.session_state["data"]["power"]["filename"]
+        data = st.session_state["data"]["power"]["data"].set_index('time')
+        # subheader
+        self.col_upload[1].subheader(filename)
+        # plot
+        fig = self.plot_client.make_data_plot(data, title="")
+        self.col_upload[1].plotly_chart(fig, use_container_width=True)
+        # translation
+        data = data.rename(columns={'time':'時間', 'value':'發電量(kWh)'})
+        # table
+        self.col_upload[1].dataframe(data, use_container_width=True)
 
         ### Sidebar section
         # set sidebar picture
@@ -650,7 +690,7 @@ class UIHandler:
         # status
         placeholder_status = form.empty()
         text_opt_status = placeholder_status.text(
-            body=f"Status: {params["text_opt_status"]["body"]}",
+            body=f'Status: {params["text_opt_status"]["body"]}',
             help=params["text_opt_status"]["help"]
             )
         form.divider()
@@ -902,8 +942,57 @@ class UIHandler:
             )
 
 
-class PlotRenderer:
-    pass
+class PlotClient:
+    def __init__(self):
+        pass
+
+    def make_data_plot(self, df, title='data', x='time', y='value'):
+        df = df.reset_index()
+        fig = px.line(df, x=x, y=y)
+        fig.update_layout(
+            title=title,
+            xaxis_title="time",
+            yaxis_title="value(kWh)",
+            # width=1800,
+            # height=800,
+            font=dict(
+                family="Arial",
+                # size=20,
+                color="black"
+            ))
+        return fig
+
+    def make_result_plot(self, df, title='data', secondary_y_limit=None):
+        x_index = df.index
+        dash_line = dict(dash = 'dash')
+        opacity = 0.4
+        if not secondary_y_limit:
+            secondary_y_limit = [df['total_power_flow_of_ESS'].min() - 100, max(df['power_from_ESS_to_factory'].max(), df['power_from_PV_to_factory'].max())]
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+        fig.add_trace(go.Scatter(x=x_index, y=[7000]*len(df), name='Contract Capacity', marker_color='#DD6251', line=dash_line), secondary_y=True)
+        fig.add_trace(go.Scatter(x=x_index, y=df['load'], name='Load', marker_color='#26272C'), secondary_y=True)
+        fig.add_trace(go.Scatter(x=x_index, y=df['total_power_from_grid_to_factory'], name='Total power from grid to factory', marker_color='#6A90AB'), secondary_y=True)
+        fig.add_trace(go.Scatter(x=x_index, y=df['safe_range'], name='safe loading range', marker_color='green', line=dash_line), secondary_y=True)
+        # fig.add_trace(go.Bar(x=x_index, y=df['power_from_ESS_to_factory'], name='Power from ESS to factory', marker_color='#F7A64F', opacity=opacity), secondary_y=False)
+        fig.add_trace(go.Bar(x=x_index, y=df['total_power_flow_of_ESS'], name='total power flow of ESS', marker_color='#AF5F08', opacity=opacity), secondary_y=False)
+        fig.add_trace(go.Bar(x=x_index, y=df['power_from_PV_to_factory'], name='Power from PV to factory', marker_color='#42AC6D', opacity=opacity), secondary_y=False)
+        # fig.add_trace(go.Scatter(x=x_index, y=df['pv'], name='PV'), secondary_y=False)
+
+        # update layout
+        fig.update_layout(dict(yaxis2={'anchor': 'x', 'overlaying': 'y', 'side': 'left'},
+                            yaxis={'anchor': 'x', 'domain': [0.0, 1.0], 'side':'right'}))
+        fig.update_layout(title_text=title, xaxis_title="time", yaxis_title="Power(kWh)", margin=dict(t=28),
+                        font=dict(size=32, family="Arial", color="black"))
+        # fig.update_yaxes(range=[0,df['total_power_from_grid_to_factory'].min()-100], secondary_y=True)
+        # fig.update_yaxes(range=[0, secondary_y_limit], secondary_y=False)
+        # fig.update_yaxes(range=secondary_y_limit, secondary_y=False)
+
+        fig.update_yaxes(rangemode='nonnegative', scaleanchor='y', scaleratio=1, constraintoward='bottom', secondary_y=True)
+        fig.update_yaxes(rangemode='normal', scaleanchor='y2', scaleratio=0.5, constraintoward='bottom', secondary_y=False)
+
+        return fig
+
 
 class Optimizer:
     def __init__(self, data_service: DataService, model_builder: MIPModelBuilder, ui_handler: UIHandler):
@@ -924,6 +1013,7 @@ class Optimizer:
 
         # UI handler
         self.ui_handler = ui_handler
+        self.ui_handler.create_layout()
 
     def set_state(self, key, value):
         st.session_state[key] = value
@@ -951,15 +1041,26 @@ class Optimizer:
 
 
 if __name__ == "__main__":
-    data = DataService.load_sample_data()
-    params = DataService.load_sample_params()
-    builder = ESSModelBuilder()
+    st.set_page_config(page_title='Power Optimizer test(Cht)', layout="wide", page_icon='./img/favicon.png')
+        
+    data_service = DataService()
+    model_builder = ESSModelBuilder()
+    ui_handler = UIHandler()
+    optimizer = Optimizer(
+        data_service=data_service, 
+        model_builder=model_builder, 
+        ui_handler=ui_handler
+        )
+    
+    # data = DataService.load_sample_data()
+    # params = DataService.load_sample_params()
+    # builder = ESSModelBuilder()
 
     # Optimizer.set_data(data=data)
     # Optimizer.set_params(params=params)
-    builder.set_data(data=data)
-    builder.set_params(params=params)
-    model = builder.build()
-    result = model.optimize(max_seconds=builder.max_sec)
+    # builder.set_data(data=data)
+    # builder.set_params(params=params)
+    # model = builder.build()
+    # result = model.optimize(max_seconds=builder.max_sec)
 
-    print(result)
+    # print(result)

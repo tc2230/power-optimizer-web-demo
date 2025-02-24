@@ -30,7 +30,7 @@
     "help": "基本時間電價，目前使用111年7月公布之版本，參考值：夏季=223.6/非夏季=166.9（https://www.taipower.com.tw/upload/6614/2022070417371173396.pdf#page=13）",
     "value": 223.6,
     "step": 0.1,
-    "format": "\"%.2f\""
+    "format": "%.2f"
   },
 
   "cb_summer": {
@@ -99,7 +99,7 @@
     "help": "儲能系統每放一度電所產生的成本與設備折舊。Ex: 1e+7/(1000*1000) = ＄10/kWh",
     "value": 10.0,
     "step": 1.0,
-    "format": "\"%.2f\""
+    "format": "%.2f"
   },
 
   "input_factory_profit_per_kwh": {
@@ -107,7 +107,7 @@
     "help": "工廠每使用一度電進行生產可收穫之利潤",
     "value": 5.0,
     "step": 1.0,
-    "format": "\"%.2f\""
+    "format": "%.2f"
   },
 
   "input_exec_rate": {
@@ -151,7 +151,7 @@
     "step": 0.1,
     "min_value": 0.0,
     "max_value": 100.0,
-    "format": "\"%.3f\""
+    "format": "%.3f"
   },
 
   "input_tendered_lb": {
@@ -161,7 +161,7 @@
     "step": 0.1,
     "min_value": 1.0,
     "max_value": 100.0,
-    "format": "\"%.3f\""
+    "format": "%.3f"
   },
 
   "txt_ed_bid": {
@@ -392,7 +392,7 @@
     "step": 0.05,
     "min_value": 0.0,
     "max_value": 1.0,
-    "format": "\"%.3f\""
+    "format": "%.3f"
   },
 
   "input_bulk_tariff_per_kwh": {
@@ -400,6 +400,6 @@
     "help": "太陽能躉售電價(每kWh)。Ex: (3.8680 + 5.8952)/2 = 4.8816",
     "value": 4.8816,
     "step": 0.25,
-    "format": "\"%.4f\""
+    "format": "%.4f"
   }
 }

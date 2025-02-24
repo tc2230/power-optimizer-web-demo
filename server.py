@@ -941,7 +941,6 @@ class UIHandler:
             on_change=None
             )
 
-
 class PlotClient:
     def __init__(self):
         pass

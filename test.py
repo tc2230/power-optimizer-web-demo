@@ -15,3 +15,7 @@ a = st.number_input(
     )
 
 st.write(st.session_state["a"])
+setattr(st.session_state, "btn_opt_clicked", True)
+st.write(st.session_state["btn_opt_clicked"])
+
+st.write(":warning:")

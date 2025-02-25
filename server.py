@@ -56,7 +56,6 @@ def verify_bid_rule(df_ed_bid, opt_bid=True):
         dispatch = all([tmp[i:i+3].sum() <= 1 for i in range(len(df_ed_bid)-2)])
         return all([row, dispatch])
 
-
 class DataService:
     """Handles data loading and caching operations"""
     def __init__(self, data_dir: str = "./data", params_filename: str = "default_params.json"):
@@ -92,9 +91,21 @@ class DataService:
             params = json.load(file)
 
         # read json data as dataframe
-        params["ed_bid"]["data"] = pd.DataFrame.from_dict(params["ed_bid"]["data"]).copy()
+        params["ed_bid"] = pd.DataFrame.from_dict(params["ed_bid"]).copy()
 
         return params
+    
+    @staticmethod
+    @st.cache_data
+    def load_ui_config() -> Dict[str, str]:
+        """Load sample params from json files"""
+
+        data_dir = "./data"
+        params_filename = "ui_config.json"
+        with open(os.path.join(data_dir, params_filename), 'r') as file:
+            config = json.load(file)
+
+        return config
 
     def load_data(self, data_dir: str) -> Dict[str, pd.DataFrame]:
         """Load data from CSV files"""
@@ -112,7 +123,7 @@ class DataService:
             params = json.load(file)
 
         # read json data as dataframe
-        params["ed_bid"]["data"] = pd.DataFrame.from_dict(params["ed_bid"]["data"]).copy()
+        params["ed_bid"] = pd.DataFrame.from_dict(params["ed_bid"]).copy()
 
         return params
 
@@ -152,133 +163,45 @@ class ESSModel(MIPModel):
     def __init__(self):
         super().__init__()
 
-        # update ui parameter to session state
-        params = st.session_state["params"]
-
-        for k, v in params.items():
-            print(k)
-            if k not in st.session_state:
-                if 'body' in v:
-                    st.session_state[k] = v['body']
-                elif 'index' in v:
-                    st.session_state[k] = v['options'][v['index']]
-                elif 'data' in v:
-                    st.session_state[k] = v['data']
-                else:
-                    st.session_state[k] = v['value']
-        # self.data_freq = params["sb_data_freq"]["options"][params["sb_data_freq"]["index"]]
-        # self.max_sec = params["input_max_sec"]["value"]
-        # self.c_cap = params["input_c_cap"]["value"]
-        # self.basic_tariff_per_kwh = params["input_basic_tariff_per_kwh"]["value"]
-        # self.summer = params["cb_summer"]["value"]
-        # self.e_cap = params["input_e_cap"]["value"]
-        # self.soc_init = params["input_soc_init"]["value"]
-        # self.opt_soc_init = params["cb_opt_soc_init"]["value"]
-        # self.soc_end = params["input_soc_end"]["value"]
-        # self.opt_soc_end = params["cb_opt_soc_end"]["value"]
-        # self.lb = params["input_lb"]["value"]
-        # self.ub = params["input_ub"]["value"]
-        # self.ess_degradation_cost_per_kwh_discharged = params["input_ess_degradation_cost_per_kwh_discharged"]["value"]
-        # self.factory_profit_per_kwh = params["input_factory_profit_per_kwh"]["value"]
-        # self.tendered_cap = params["ed_bid"]["data"]["tendered_cap(mWh)"]
-        # self.clearing_price_per_mwh = params["ed_bid"]["data"]["clearing_price(mWh)"]
-        # self.exec_rate = params["input_exec_rate"]["value"]
-        # self.effectiveness_level = params["sb_effectiveness_level"]["options"][params["sb_effectiveness_level"]["index"]]
-        # self.DA_margin_price_per_mwh = params["ed_bid"]["data"]["marginal_price(mWh)"]
-        # self.dispatch_ratio = params["ed_bid"]["data"]["dispatch_ratio(%)"]
-        # self.opt_bid = params["cb_opt_bid"]["value"]
-        # self.opt_tendered_cap = params["cb_opt_tendered_cap"]["value"]
-        # self.relax_tendered_step = params["cb_relax_tendered_step"]["value"]
-        # self.tendered_lb = params["input_tendered_lb"]["value"]
-        # self.tendered_ub = params["input_tendered_ub"]["value"]
-        # self.bid = params["ed_bid"]["data"]["bid"].tolist()
-        # self.bid_win = params["ed_bid"]["data"]["win"].tolist()
-        # self.dispatch = params["ed_bid"]["data"]["dispatch"].tolist()
-        # self.limit_g_es_p = params["input_limit_g_es_p"]["value"]
-        # self.limit_es_p = params["input_limit_es_p"]["value"]
-        # self.limit_g_p = params["input_limit_g_p"]["value"]
-        # self.limit_pv_p = params["input_limit_pv_p"]["value"]
-        # self.loss_coef = params["input_loss_coef"]["value"]
-        # self.bulk_tariff_per_kwh = params["input_bulk_tariff_per_kwh"]["value"]
-
     def update(self):
         # apply parameter and data
         df_load = st.session_state["data"]["load"]["data"]
         df_pv = st.session_state["data"]["power"]["data"]
-        params = st.session_state["params"]
 
-        self.data_freq = st.session_state["sb_data_freq"]#["options"][st.session_state["sb_data_freq"]["index"]]
-        self.max_sec = st.session_state["input_max_sec"]#["value"]
-        self.c_cap = st.session_state["input_c_cap"]#["value"]
-        self.basic_tariff_per_kwh = st.session_state["input_basic_tariff_per_kwh"]#["value"]
-        self.summer = st.session_state["cb_summer"]#["value"]
-        self.e_cap = st.session_state["input_e_cap"]#["value"]
-        self.soc_init = st.session_state["input_soc_init"]#["value"]
-        self.opt_soc_init = st.session_state["cb_opt_soc_init"]#["value"]
-        self.soc_end = st.session_state["input_soc_end"]#["value"]
-        self.opt_soc_end = st.session_state["cb_opt_soc_end"]#["value"]
-        self.lb = st.session_state["input_lb"]#["value"]
-        self.ub = st.session_state["input_ub"]#["value"]
-        self.ess_degradation_cost_per_kwh_discharged = st.session_state["input_ess_degradation_cost_per_kwh_discharged"]#["value"]
-        self.factory_profit_per_kwh = st.session_state["input_factory_profit_per_kwh"]#["value"]
-        self.tendered_cap = st.session_state["ed_bid"]["tendered_cap(mWh)"]#["data"]["tendered_cap(mWh)"]
-        self.clearing_price_per_mwh = st.session_state["ed_bid"]["clearing_price(mWh)"]#["data"]["clearing_price(mWh)"]
-        self.exec_rate = st.session_state["input_exec_rate"]#["value"]
-        self.effectiveness_level = st.session_state["sb_effectiveness_level"]#["options"][st.session_state["sb_effectiveness_level"]["index"]]
-        self.DA_margin_price_per_mwh = st.session_state["ed_bid"]["marginal_price(mWh)"]#["data"]["marginal_price(mWh)"]
-        self.dispatch_ratio = st.session_state["ed_bid"]["dispatch_ratio(%)"]#["data"]["dispatch_ratio(%)"]
-        self.opt_bid = st.session_state["cb_opt_bid"]#["value"]
-        self.opt_tendered_cap = st.session_state["cb_opt_tendered_cap"]#["value"]
-        self.relax_tendered_step = st.session_state["cb_relax_tendered_step"]#["value"]
-        self.tendered_lb = st.session_state["input_tendered_lb"]#["value"]
-        self.tendered_ub = st.session_state["input_tendered_ub"]#["value"]
-        self.bid = st.session_state["ed_bid"]["bid"].tolist()#["data"]["bid"].tolist()
-        self.bid_win = st.session_state["ed_bid"]["win"].tolist()#["data"]["win"].tolist()
-        self.dispatch = st.session_state["ed_bid"]["dispatch"].tolist()#["data"]["dispatch"].tolist()
-        self.limit_g_es_p = st.session_state["input_limit_g_es_p"]#["value"]
-        self.limit_es_p = st.session_state["input_limit_es_p"]#["value"]
-        self.limit_g_p = st.session_state["input_limit_g_p"]#["value"]
-        self.limit_pv_p = st.session_state["input_limit_pv_p"]#["value"]
-        self.loss_coef = st.session_state["input_loss_coef"]#["value"]
-        self.bulk_tariff_per_kwh = st.session_state["input_bulk_tariff_per_kwh"]#["value"]
-
-        # params = st.session_state["params"]
-
-        # self.data_freq = params["sb_data_freq"]["options"][params["sb_data_freq"]["index"]]
-        # self.max_sec = params["input_max_sec"]["value"]
-        # self.c_cap = params["input_c_cap"]["value"]
-        # self.basic_tariff_per_kwh = params["input_basic_tariff_per_kwh"]["value"]
-        # self.summer = params["cb_summer"]["value"]
-        # self.e_cap = params["input_e_cap"]["value"]
-        # self.soc_init = params["input_soc_init"]["value"]
-        # self.opt_soc_init = params["cb_opt_soc_init"]["value"]
-        # self.soc_end = params["input_soc_end"]["value"]
-        # self.opt_soc_end = params["cb_opt_soc_end"]["value"]
-        # self.lb = params["input_lb"]["value"]
-        # self.ub = params["input_ub"]["value"]
-        # self.ess_degradation_cost_per_kwh_discharged = params["input_ess_degradation_cost_per_kwh_discharged"]["value"]
-        # self.factory_profit_per_kwh = params["input_factory_profit_per_kwh"]["value"]
-        # self.tendered_cap = params["ed_bid"]["data"]["tendered_cap(mWh)"]
-        # self.clearing_price_per_mwh = params["ed_bid"]["data"]["clearing_price(mWh)"]
-        # self.exec_rate = params["input_exec_rate"]["value"]
-        # self.effectiveness_level = params["sb_effectiveness_level"]["options"][params["sb_effectiveness_level"]["index"]]
-        # self.DA_margin_price_per_mwh = params["ed_bid"]["data"]["marginal_price(mWh)"]
-        # self.dispatch_ratio = params["ed_bid"]["data"]["dispatch_ratio(%)"]
-        # self.opt_bid = params["cb_opt_bid"]["value"]
-        # self.opt_tendered_cap = params["cb_opt_tendered_cap"]["value"]
-        # self.relax_tendered_step = params["cb_relax_tendered_step"]["value"]
-        # self.tendered_lb = params["input_tendered_lb"]["value"]
-        # self.tendered_ub = params["input_tendered_ub"]["value"]
-        # self.bid = params["ed_bid"]["data"]["bid"].tolist()
-        # self.bid_win = params["ed_bid"]["data"]["win"].tolist()
-        # self.dispatch = params["ed_bid"]["data"]["dispatch"].tolist()
-        # self.limit_g_es_p = params["input_limit_g_es_p"]["value"]
-        # self.limit_es_p = params["input_limit_es_p"]["value"]
-        # self.limit_g_p = params["input_limit_g_p"]["value"]
-        # self.limit_pv_p = params["input_limit_pv_p"]["value"]
-        # self.loss_coef = params["input_loss_coef"]["value"]
-        # self.bulk_tariff_per_kwh = params["input_bulk_tariff_per_kwh"]["value"]
-
+        self.data_freq = st.session_state["sb_data_freq"]
+        self.max_sec = st.session_state["input_max_sec"]
+        self.c_cap = st.session_state["input_c_cap"]
+        self.basic_tariff_per_kwh = st.session_state["input_basic_tariff_per_kwh"]
+        self.summer = st.session_state["cb_summer"]
+        self.e_cap = st.session_state["input_e_cap"]
+        self.soc_init = st.session_state["input_soc_init"]
+        self.opt_soc_init = st.session_state["cb_opt_soc_init"]
+        self.soc_end = st.session_state["input_soc_end"]
+        self.opt_soc_end = st.session_state["cb_opt_soc_end"]
+        self.lb = st.session_state["input_lb"]
+        self.ub = st.session_state["input_ub"]
+        self.ess_degradation_cost_per_kwh_discharged = st.session_state["input_ess_degradation_cost_per_kwh_discharged"]
+        self.factory_profit_per_kwh = st.session_state["input_factory_profit_per_kwh"]
+        self.tendered_cap = st.session_state["ed_bid"]["tendered_cap(mWh)"]
+        self.clearing_price_per_mwh = st.session_state["ed_bid"]["clearing_price(mWh)"]
+        self.exec_rate = st.session_state["input_exec_rate"]
+        self.effectiveness_level = st.session_state["sb_effectiveness_level"]
+        self.DA_margin_price_per_mwh = st.session_state["ed_bid"]["marginal_price(mWh)"]
+        self.dispatch_ratio = st.session_state["ed_bid"]["dispatch_ratio(%)"]
+        self.opt_bid = st.session_state["cb_opt_bid"]
+        self.opt_tendered_cap = st.session_state["cb_opt_tendered_cap"]
+        self.relax_tendered_step = st.session_state["cb_relax_tendered_step"]
+        self.tendered_lb = st.session_state["input_tendered_lb"]
+        self.tendered_ub = st.session_state["input_tendered_ub"]
+        self.bid = st.session_state["ed_bid"]["bid"].tolist()
+        self.bid_win = st.session_state["ed_bid"]["win"].tolist()
+        self.dispatch = st.session_state["ed_bid"]["dispatch"].tolist()
+        self.limit_g_es_p = st.session_state["input_limit_g_es_p"]
+        self.limit_es_p = st.session_state["input_limit_es_p"]
+        self.limit_g_p = st.session_state["input_limit_g_p"]
+        self.limit_pv_p = st.session_state["input_limit_pv_p"]
+        self.loss_coef = st.session_state["input_loss_coef"]
+        self.bulk_tariff_per_kwh = st.session_state["input_bulk_tariff_per_kwh"]
 
         ### retrieve info from input data
         self.consecutive_n = int(60/self.data_freq)
@@ -540,8 +463,6 @@ class ESSModel(MIPModel):
             self.model.add_constr(self.es[i] >= self.soc_lb[i])
             self.model.add_constr(self.es[i] <= self.soc_ub[i])
 
-        # print(e_init)
-        # print(soc_lb[i], soc_ub[i])
         ## PV
         # flow balance
         for i in range(n):
@@ -664,18 +585,12 @@ class UIHandler:
     def __init__(self):
         self.plot_client = PlotClient()
 
-    # def update_params(self, param_name: str):
-    #     def callback():
-    #         if "index" in st.session_state["params"][param_name]:
-    #             st.session_state["params"][param_name]["index"] = st.session_state[param_name]
-    #         else:
-    #             st.session_state["params"][param_name]["value"] = st.session_state[param_name]
+    def set_render_config(self, side_logo_path, caption=None):
+        # set css of buttons
+        st.markdown("<style>.row-widget.stButton {text-align: center;}</style>", unsafe_allow_html=True) 
 
-    #     return callback
-
-    # set background picture and caption at the top of sidebar
-    def set_sidebar_markdown(self, img_path, caption=None):
-        with open(img_path, "rb") as f:
+        # set picture and caption at the top of sidebar
+        with open(side_logo_path, "rb") as f:
             data = base64.b64encode(f.read()).decode("utf-8")
 
             st.sidebar.markdown(
@@ -708,14 +623,11 @@ class UIHandler:
             )
 
     def render(self, validate_callback: callable, optimize_callback: callable):
-        params = st.session_state["params"]
+        # set render config
+        self.set_render_config(side_logo_path="./img/thisisfine.png")
 
-        print('\n-----------------------------\n', params["input_c_cap"]["value"], '\n-----------------------------\n')
-        print('\n-----------------------------\n', st.session_state["input_c_cap"], '\n-----------------------------\n')
-
-        ### global streamlit config
-        # st.set_page_config(page_title='Power Optimizer test(Cht)', layout="wide", page_icon='./img/favicon.png')
-        st.markdown("<style>.row-widget.stButton {text-align: center;}</style>", unsafe_allow_html=True) # for button css
+        # retrieve ui configs
+        config = st.session_state["ui_config"]
 
         ### Dashboard section - input data
         # page title
@@ -772,41 +684,22 @@ class UIHandler:
         # show dataframe
         self.col_upload[1].dataframe(data, use_container_width=True)
 
-        # # optimize result
-        # if params["text_opt_status"]["body"]:
-        #     with st.spinner("ZzZZzzz..."):
-        #         df_load = st.session_state["data"]["load"]["data"]
-        #         df_power = st.session_state["data"]["power"]["data"]
-
-        #     ## verify settings
-        #     if not (
-        #         params["input_lb"]["value"] < params["input_ub"]["value"] and
-        #         params["input_lb"]["value"] <= params["input_soc_init"]["value"] <= params["input_lb"]["value"] and
-        #         params["input_lb"]["value"] <= input_soc_end <= params["input_ub"]["value"]
-        #         ):
-        #         self.placeholder_warning = st.empty()
-        #         self.placeholder_warning.warning('Check SOC boundary setting.', icon=":warning:")
-        #         st.stop()
-
         ### Sidebar section
-        # set sidebar picture
-        self.set_sidebar_markdown(img_path="./img/thisisfine.png")
-
-        ## form general setting
+        # form
         form = st.sidebar.form(key='Optimize', clear_on_submit=False)
 
-        # button
+        # form submit button
         self.placeholder_btn = form.empty()
-        btn_opt = self.placeholder_btn.form_submit_button(
+        self.btn_opt = self.placeholder_btn.form_submit_button(
             label='Optimize',
             on_click=optimize_callback
             )
 
-        # status
+        # displayed status
         self.placeholder_status = form.empty()
         self.text_opt_status = self.placeholder_status.text(
-            body=f'Status: {params["text_opt_status"]["body"]}',
-            help=params["text_opt_status"]["help"]
+            body=f'Status: {st.session_state["text_opt_status"]}',
+            help=config["text_opt_status"]["help"]
             )
         form.divider()
 
@@ -817,265 +710,230 @@ class UIHandler:
         # optimization setting
         exp_param_1 = form.expander('資料與求解參數')#, expanded=True
         sb_data_freq = exp_param_1.selectbox(
-            label=params["sb_data_freq"]["label"],
-            options=params["sb_data_freq"]["options"],
-            index=params["sb_data_freq"]["index"],
-            help=params["sb_data_freq"]["help"],
-
-            )
+            label=config["sb_data_freq"]["label"],
+            options=config["sb_data_freq"]["options"],
+            index=config["sb_data_freq"]["index"],
+            help=config["sb_data_freq"]["help"])
+        st.session_state["sb_data_freq"] = sb_data_freq
         input_max_sec = exp_param_1.number_input(
-            label=params["input_max_sec"]["label"],
-            value=params["input_max_sec"]["value"],
-            step=params["input_max_sec"]["step"],
-            help=params["input_max_sec"]["help"],
-
-            )
-
+            label=config["input_max_sec"]["label"],
+            value=st.session_state["input_max_sec"],
+            step=config["input_max_sec"]["step"],
+            help=config["input_max_sec"]["help"])
+        st.session_state["input_max_sec"] = input_max_sec
+        
         # Price-related setting
         exp_param_2 = form.expander('電力價格相關')
         input_c_cap = exp_param_2.number_input(
-            label=params["input_c_cap"]["label"],
-            value=params["input_c_cap"]["value"],
-            step=params["input_c_cap"]["step"],
-            help=params["input_c_cap"]["help"],
-
-            )
+            label=config["input_c_cap"]["label"],
+            value=st.session_state["input_c_cap"],
+            step=config["input_c_cap"]["step"],
+            help=config["input_c_cap"]["help"])
+        st.session_state["input_c_cap"] = input_c_cap
         input_basic_tariff_per_kwh = exp_param_2.number_input(
-            label=params["input_basic_tariff_per_kwh"]["label"],
-            value=params["input_basic_tariff_per_kwh"]["value"],
-            step=params["input_basic_tariff_per_kwh"]["step"],
-            format=params["input_basic_tariff_per_kwh"]["format"],
-            help=params["input_basic_tariff_per_kwh"]["help"],
-
-            )
+            label=config["input_basic_tariff_per_kwh"]["label"],
+            value=st.session_state["input_basic_tariff_per_kwh"],
+            step=config["input_basic_tariff_per_kwh"]["step"],
+            format=config["input_basic_tariff_per_kwh"]["format"],
+            help=config["input_basic_tariff_per_kwh"]["help"])
+        st.session_state["input_basic_tariff_per_kwh"] = input_basic_tariff_per_kwh
         cb_summer = exp_param_2.checkbox(
-            label=params["cb_summer"]["label"],
-            value=params["cb_summer"]["value"],
-            help=params["cb_summer"]["help"],
-
-            )
+            label=config["cb_summer"]["label"],
+            value=st.session_state["cb_summer"],
+            help=config["cb_summer"]["help"])
+        st.session_state["cb_summer"] = cb_summer
 
         # ESS-related setting
         exp_param_3 = form.expander('儲能系統相關')
         input_e_cap = exp_param_3.number_input(
-            label=params["input_e_cap"]["label"],
-            value=params["input_e_cap"]["value"],
-            step=params["input_e_cap"]["step"],
-            help=params["input_e_cap"]["help"],
-
-            )
+            label=config["input_e_cap"]["label"],
+            value=st.session_state["input_e_cap"],
+            step=config["input_e_cap"]["step"],
+            help=config["input_e_cap"]["help"])
+        st.session_state["input_e_cap"] = input_e_cap
         input_ub = exp_param_3.number_input(
-            label=params["input_ub"]["label"],
-            value=params["input_ub"]["value"],
-            step=params["input_ub"]["step"],
-            min_value=params["input_ub"]["min_value"],
-            max_value=params["input_ub"]["max_value"],
-            help=params["input_ub"]["help"],
-
-            )
+            label=config["input_ub"]["label"],
+            value=st.session_state["input_ub"],
+            step=config["input_ub"]["step"],
+            min_value=config["input_ub"]["min_value"],
+            max_value=config["input_ub"]["max_value"],
+            help=config["input_ub"]["help"])
+        st.session_state["input_ub"] = input_ub
         input_lb= exp_param_3.number_input(
-            label=params["input_lb"]["label"],
-            value=params["input_lb"]["value"],
-            step=params["input_lb"]["step"],
-            min_value=params["input_lb"]["min_value"],
-            max_value=params["input_lb"]["max_value"],
-            help=params["input_lb"]["help"],
-
-            )
+            label=config["input_lb"]["label"],
+            value=st.session_state["input_lb"],
+            step=config["input_lb"]["step"],
+            min_value=config["input_lb"]["min_value"],
+            max_value=config["input_lb"]["max_value"],
+            help=config["input_lb"]["help"])
+        st.session_state["input_lb"] = input_lb
         input_soc_init = exp_param_3.number_input(
-            label=params["input_soc_init"]["label"],
-            value=params["input_soc_init"]["value"],
-            step=params["input_soc_init"]["step"],
-            min_value=params["input_soc_init"]["min_value"],
-            max_value=params["input_soc_init"]["max_value"],
-            help=params["input_soc_init"]["help"],
-
-            )
+            label=config["input_soc_init"]["label"],
+            value=st.session_state["input_soc_init"],
+            step=config["input_soc_init"]["step"],
+            min_value=config["input_soc_init"]["min_value"],
+            max_value=config["input_soc_init"]["max_value"],
+            help=config["input_soc_init"]["help"])
+        st.session_state["input_soc_init"] = input_soc_init
         cb_opt_soc_init = exp_param_3.checkbox(
-            label=params["cb_opt_soc_init"]["label"],
-            value=params["cb_opt_soc_init"]["value"],
-            help=params["cb_opt_soc_init"]["help"],
-
-            )
+            label=config["cb_opt_soc_init"]["label"],
+            value=st.session_state["cb_opt_soc_init"],
+            help=config["cb_opt_soc_init"]["help"])
+        st.session_state["cb_opt_soc_init"] = cb_opt_soc_init
         input_soc_end = exp_param_3.number_input(
-            label=params["input_soc_end"]["label"],
-            value=params["input_soc_end"]["value"],
-            step=params["input_soc_end"]["step"],
-            min_value=params["input_soc_end"]["min_value"],
-            max_value=params["input_soc_end"]["max_value"],
-            help=params["input_soc_end"]["help"],
-
-            )
+            label=config["input_soc_end"]["label"],
+            value=st.session_state["input_soc_end"],
+            step=config["input_soc_end"]["step"],
+            min_value=config["input_soc_end"]["min_value"],
+            max_value=config["input_soc_end"]["max_value"],
+            help=config["input_soc_end"]["help"])
+        st.session_state["input_soc_end"] = input_soc_end
         cb_opt_soc_end = exp_param_3.checkbox(
-            label=params["cb_opt_soc_end"]["label"],
-            value=params["cb_opt_soc_end"]["value"],
-            help=params["cb_opt_soc_end"]["help"],
-
-            )
+            label=config["cb_opt_soc_end"]["label"],
+            value=st.session_state["cb_opt_soc_end"],
+            help=config["cb_opt_soc_end"]["help"])
+        st.session_state["cb_opt_soc_end"] = cb_opt_soc_end
         input_ess_degradation_cost_per_kwh_discharged = exp_param_3.number_input(
-            label=params["input_ess_degradation_cost_per_kwh_discharged"]["label"],
-            value=params["input_ess_degradation_cost_per_kwh_discharged"]["value"],
-            step=params["input_ess_degradation_cost_per_kwh_discharged"]["step"],
-            format=params["input_ess_degradation_cost_per_kwh_discharged"]["format"],
-            help=params["input_ess_degradation_cost_per_kwh_discharged"]["help"],
-
-            )
+            label=config["input_ess_degradation_cost_per_kwh_discharged"]["label"],
+            value=st.session_state["input_ess_degradation_cost_per_kwh_discharged"],
+            step=config["input_ess_degradation_cost_per_kwh_discharged"]["step"],
+            format=config["input_ess_degradation_cost_per_kwh_discharged"]["format"],
+            help=config["input_ess_degradation_cost_per_kwh_discharged"]["help"])
+        st.session_state["input_ess_degradation_cost_per_kwh_discharged"] = input_ess_degradation_cost_per_kwh_discharged
 
         # Production-related setting
         exp_param_4 = form.expander('生產相關')
         input_factory_profit_per_kwh = exp_param_4.number_input(
-            label=params["input_factory_profit_per_kwh"]["label"],
-            value=params["input_factory_profit_per_kwh"]["value"],
-            step=params["input_factory_profit_per_kwh"]["step"],
-            format=params["input_factory_profit_per_kwh"]["format"],
-            help=params["input_factory_profit_per_kwh"]["help"],
-
-            )
+            label=config["input_factory_profit_per_kwh"]["label"],
+            value=st.session_state["input_factory_profit_per_kwh"],
+            step=config["input_factory_profit_per_kwh"]["step"],
+            format=config["input_factory_profit_per_kwh"]["format"],
+            help=config["input_factory_profit_per_kwh"]["help"])
+        st.session_state["input_factory_profit_per_kwh"] = input_factory_profit_per_kwh
 
         # Trading-related setting
         exp_param_5 = form.expander('輔助服務投標相關')
-        # input_tendered_cap = exp_param_5.number_input(label='投標容量(kWh)', value=1200, step=100, help=description['tendered_cap'])
-        # input_clearing_price_per_mwh = exp_param_5.number_input(label='日前即時備轉容量結清價格(每mWh)', value=350.00, step=5.0, format="%.2f", help=description['clearing_price_per_mwh'])
         input_exec_rate = exp_param_5.number_input(
-            label=params["input_exec_rate"]["label"],
-            value=params["input_exec_rate"]["value"],
-            step=params["input_exec_rate"]["step"],
-            min_value=params["input_exec_rate"]["min_value"],
-            max_value=params["input_exec_rate"]["max_value"],
-            help=params["input_exec_rate"]["help"],
-
-            )
+            label=config["input_exec_rate"]["label"],
+            value=st.session_state["input_exec_rate"],
+            step=config["input_exec_rate"]["step"],
+            min_value=config["input_exec_rate"]["min_value"],
+            max_value=config["input_exec_rate"]["max_value"],
+            help=config["input_exec_rate"]["help"])
+        st.session_state["input_exec_rate"] = input_exec_rate
         sb_effectiveness_level = exp_param_5.selectbox(
-            label=params["sb_effectiveness_level"]["label"],
-            options=params["sb_effectiveness_level"]["options"],
-            index=params["sb_effectiveness_level"]["index"],
-            help=params["sb_effectiveness_level"]["help"],
-
-            )
-        # input_DA_margin_price_per_mwh = exp_param_5.number_input(label='日前電能邊際價格(每mWh)', value=4757.123, step=0.25, format="%.3f", help=description['DA_margin_price_per_mwh'])
-        # input_dispatch_ratio = exp_param_5.number_input(label='預估調度比例(%)', value=60, step=1, min_value=0, max_value=100, help=description['dispatch_ratio'])
+            label=config["sb_effectiveness_level"]["label"],
+            options=config["sb_effectiveness_level"]["options"],
+            index=config["sb_effectiveness_level"]["index"],
+            help=config["sb_effectiveness_level"]["help"])
+        st.session_state["sb_effectiveness_level"] = sb_effectiveness_level
 
         # Scenario setting
         exp_param_6 = form.expander('投標情境設定')
         cb_opt_bid = exp_param_6.checkbox(
-            label=params["cb_opt_bid"]["label"],
-            value=params["cb_opt_bid"]["value"],
-            help=params["cb_opt_bid"]["help"],
-
-            )
+            label=config["cb_opt_bid"]["label"],
+            value=st.session_state["cb_opt_bid"],
+            help=config["cb_opt_bid"]["help"])
+        st.session_state["cb_opt_bid"] = cb_opt_bid
         cb_opt_tendered_cap = exp_param_6.checkbox(
-            label=params["cb_opt_tendered_cap"]["label"],
-            value=params["cb_opt_tendered_cap"]["value"],
-            help=params["cb_opt_tendered_cap"]["help"],
-
-            )
+            label=config["cb_opt_tendered_cap"]["label"],
+            value=st.session_state["cb_opt_tendered_cap"],
+            help=config["cb_opt_tendered_cap"]["help"])
+        st.session_state["cb_opt_tendered_cap"] = cb_opt_tendered_cap
         cb_relax_tendered_step = exp_param_6.checkbox(
-            label=params["cb_relax_tendered_step"]["label"],
-            value=params["cb_relax_tendered_step"]["value"],
-            help=params["cb_relax_tendered_step"]["help"],
-
-            )
+            label=config["cb_relax_tendered_step"]["label"],
+            value=st.session_state["cb_relax_tendered_step"],
+            help=config["cb_relax_tendered_step"]["help"])
+        st.session_state["cb_relax_tendered_step"] = cb_relax_tendered_step
         input_tendered_ub = exp_param_6.number_input(
-            label=params["input_tendered_ub"]["label"],
-            value=params["input_tendered_ub"]["value"],
-            step=params["input_tendered_ub"]["step"],
-            min_value=params["input_tendered_ub"]["min_value"],
-            max_value=params["input_tendered_ub"]["max_value"],
-            format=params["input_tendered_ub"]["format"],
-            help=params["input_tendered_ub"]["help"],
-
-            )
+            label=config["input_tendered_ub"]["label"],
+            value=st.session_state["input_tendered_ub"],
+            step=config["input_tendered_ub"]["step"],
+            min_value=config["input_tendered_ub"]["min_value"],
+            max_value=config["input_tendered_ub"]["max_value"],
+            format=config["input_tendered_ub"]["format"],
+            help=config["input_tendered_ub"]["help"])
+        st.session_state["input_tendered_ub"] = input_tendered_ub
         input_tendered_lb = exp_param_6.number_input(
-            label=params["input_tendered_lb"]["label"],
-            value=params["input_tendered_lb"]["value"],
-            step=params["input_tendered_lb"]["step"],
-            min_value=params["input_tendered_lb"]["min_value"],
-            max_value=params["input_tendered_lb"]["max_value"],
-            format=params["input_tendered_lb"]["format"],
-            help=params["input_tendered_lb"]["help"],
-
-            )
+            label=config["input_tendered_lb"]["label"],
+            value=st.session_state["input_tendered_lb"],
+            step=config["input_tendered_lb"]["step"],
+            min_value=config["input_tendered_lb"]["min_value"],
+            max_value=config["input_tendered_lb"]["max_value"],
+            format=config["input_tendered_lb"]["format"],
+            help=config["input_tendered_lb"]["help"])
+        st.session_state["input_tendered_lb"] = input_tendered_lb
         txt_ed_bid = exp_param_6.text(
-            body=params["txt_ed_bid"]["body"],
-            help=params["txt_ed_bid"]["help"]
+            body=config["txt_ed_bid"]["body"],
+            help=config["txt_ed_bid"]["help"]
             )
+        st.session_state["txt_ed_bid"] = txt_ed_bid
         ed_bid = exp_param_6.data_editor(
-            data=params["ed_bid"]["data"],
-            use_container_width=params["ed_bid"]["use_container_width"]
+            data=st.session_state["ed_bid"],
+            use_container_width=True
             )
+        st.session_state["ed_bid"] = ed_bid
 
         # Transmission-related setting
         exp_param_7 = form.expander('電力輸送相關')
         input_limit_g_es_p = exp_param_7.number_input(
-            label=params["input_limit_g_es_p"]["label"],
-            value=params["input_limit_g_es_p"]["value"],
-            step=params["input_limit_g_es_p"]["step"],
-            help=params["input_limit_g_es_p"]["help"],
-
-            )
+            label=config["input_limit_g_es_p"]["label"],
+            value=st.session_state["input_limit_g_es_p"],
+            step=config["input_limit_g_es_p"]["step"],
+            help=config["input_limit_g_es_p"]["help"])
+        st.session_state["input_limit_g_es_p"] = input_limit_g_es_p
         input_limit_es_p = exp_param_7.number_input(
-            label=params["input_limit_es_p"]["label"],
-            value=params["input_limit_es_p"]["value"],
-            step=params["input_limit_es_p"]["step"],
-            help=params["input_limit_es_p"]["help"],
-
-            )
+            label=config["input_limit_es_p"]["label"],
+            value=st.session_state["input_limit_es_p"],
+            step=config["input_limit_es_p"]["step"],
+            help=config["input_limit_es_p"]["help"])
+        st.session_state["input_limit_es_p"] = input_limit_es_p
         input_limit_g_p = exp_param_7.number_input(
-            label=params["input_limit_g_p"]["label"],
-            value=params["input_limit_g_p"]["value"],
-            step=params["input_limit_g_p"]["step"],
-            help=params["input_limit_g_p"]["help"],
-
-            )
+            label=config["input_limit_g_p"]["label"],
+            value=st.session_state["input_limit_g_p"],
+            step=config["input_limit_g_p"]["step"],
+            help=config["input_limit_g_p"]["help"])
+        st.session_state["input_limit_g_p"] = input_limit_g_p
         input_limit_pv_p = exp_param_7.number_input(
-            label=params["input_limit_pv_p"]["label"],
-            value=params["input_limit_pv_p"]["value"],
-            step=params["input_limit_pv_p"]["step"],
-            help=params["input_limit_pv_p"]["help"],
-
-            )
+            label=config["input_limit_pv_p"]["label"],
+            value=st.session_state["input_limit_pv_p"],
+            step=config["input_limit_pv_p"]["step"],
+            help=config["input_limit_pv_p"]["help"])
+        st.session_state["input_limit_pv_p"] = input_limit_pv_p
         input_loss_coef = exp_param_7.number_input(
-            label=params["input_loss_coef"]["label"],
-            value=params["input_loss_coef"]["value"],
-            step=params["input_loss_coef"]["step"],
-            min_value=params["input_loss_coef"]["min_value"],
-            max_value=params["input_loss_coef"]["max_value"],
-            format=params["input_loss_coef"]["format"],
-            help=params["input_loss_coef"]["help"],
-
-            )
+            label=config["input_loss_coef"]["label"],
+            value=st.session_state["input_loss_coef"],
+            step=config["input_loss_coef"]["step"],
+            min_value=config["input_loss_coef"]["min_value"],
+            max_value=config["input_loss_coef"]["max_value"],
+            format=config["input_loss_coef"]["format"],
+            help=config["input_loss_coef"]["help"])
+        st.session_state["input_loss_coef"] = input_loss_coef
 
         # PV-related setting
         exp_param_8 = form.expander('太陽能發電機組相關')
         input_bulk_tariff_per_kwh = exp_param_8.number_input(
-            label=params["input_bulk_tariff_per_kwh"]["label"],
-            value=params["input_bulk_tariff_per_kwh"]["value"],
-            step=params["input_bulk_tariff_per_kwh"]["step"],
-            format=params["input_bulk_tariff_per_kwh"]["format"],
-            help=params["input_bulk_tariff_per_kwh"]["help"],
-
-            )
-
-        # for k in sorted(list(st.session_state.keys())):
-        #     if isinstance(st.session_state[k], pd.DataFrame):
-        #         print(st.session_state[k].head())
-        #     else:
-        #         print('\n-----------------------------------\n', k, st.session_state[k])
+            label=config["input_bulk_tariff_per_kwh"]["label"],
+            value=st.session_state["input_bulk_tariff_per_kwh"],
+            step=config["input_bulk_tariff_per_kwh"]["step"],
+            format=config["input_bulk_tariff_per_kwh"]["format"],
+            help=config["input_bulk_tariff_per_kwh"]["help"])
+        st.session_state["input_bulk_tariff_per_kwh"] = input_bulk_tariff_per_kwh
 
         ### Dashboard section - optimization result
-        with st.spinner("ZzZZzzz..."):
-            # validate params setting
-            valid, msg = validate_callback()
-            if not valid:
-                self.placeholder_warning = st.empty()
-                self.placeholder_warning.warning(msg, icon="⚠️") # Shortcodes are not allowed when using warning container, only single character.
-                st.stop()
-            else:
-                # optimize with callback
-                status, df_report, df_result = optimize_callback()
-
-                # # retrieve optimization status
-                # status = st.session_state["params"]["text_opt_status"]["value"]
+        if st.session_state["optimization_count"] == 0 and not self.btn_opt:
+            st.stop()
+        else:
+            with st.spinner("ZzZZzzz..."):
+                # validate params setting
+                valid, msg = validate_callback()
+                if not valid:
+                    self.placeholder_warning = st.empty()
+                    self.placeholder_warning.warning(msg, icon="⚠️") # Shortcodes are not allowed when using warning container, only single character.
+                    st.stop()
+                else:
+                    # optimize with callback
+                    status, df_report, df_result = optimize_callback()
 
                 # set dataframe index
                 df_report = df_report.set_index('項目')
@@ -1103,10 +961,11 @@ class UIHandler:
                 # update optimize button and status
                 self.btn_opt = self.placeholder_btn.form_submit_button(label=' Optimize ')
 
+                # uodate status
                 self.placeholder_status.empty()
-                st.session_state["params"]["text_opt_status"]["value"] = self.placeholder_status.text(
+                self.text_opt_status = self.placeholder_status.text(
                     body=f'Status: {status}',
-                    help=params["text_opt_status"]["help"]
+                    help=config["text_opt_status"]["help"]
                     )
 
                 # count optimization
@@ -1164,32 +1023,12 @@ class PlotClient:
         return fig
 
 class Optimizer:
-    def __init__(self, data_service: DataService, model_class: Type[MIPModel], ui_handler_class: Type[UIHandler]):
-        # init data service and data/params
-        self.data_service = data_service
-        if "sample_data" not in st.session_state:
-            st.session_state["sample_data"] = data_service.load_sample_data()
-        if "sample_params" not in st.session_state:
-            st.session_state["sample_params"] = data_service.load_sample_params()
-        if "data" not in st.session_state:
-            st.session_state["data"] = st.session_state["sample_data"]
-        if "params" not in st.session_state:
-            st.session_state["params"] = st.session_state["sample_params"]
-        if "optimization_status" not in st.session_state:
-                st.session_state['optimization_status'] = ""
-        if "optimization_count" not in st.session_state:
-                st.session_state['optimization_count'] = 0
-        if "df_report" not in st.session_state:
-                st.session_state['df_report'] = None
-        if "df_result" not in st.session_state:
-                st.session_state['df_result'] = None
-
+    def __init__(self, model: MIPModel, ui_handler: UIHandler):
         # model
-        self.model = model_class()
+        self.model = model
 
         # UI handler
-        self.ui_handler = ui_handler_class()
-
+        self.ui_handler = ui_handler
 
     def start(self):
         self.ui_handler.render(
@@ -1202,12 +1041,6 @@ class Optimizer:
         pass
 
     def validate_SOC_setting(self) -> bool:
-        # params = st.session_state["params"]
-        # input_lb = params["input_lb"]["value"]
-        # input_ub = params["input_ub"]["value"]
-        # input_soc_init = params["input_soc_init"]["value"]
-        # input_soc_end = params["input_soc_end"]["value"]
-
         input_lb = st.session_state["input_lb"]
         input_ub = st.session_state["input_ub"]
         input_soc_init = st.session_state["input_soc_init"]
@@ -1222,38 +1055,23 @@ class Optimizer:
         return True
 
     def validate_bid_setting(self) -> bool:
-        # params = st.session_state["params"]
-        # df_ed_bid = params["ed_bid"]
-        # opt_bid = params["cb_opt_bid"]["value"]
-
         df_ed_bid = st.session_state["ed_bid"]
         opt_bid = st.session_state["cb_opt_bid"]
 
         # trading-related rule
         if not verify_bid_rule(
-            # df_ed_bid=df_ed_bid["data"],
             df_ed_bid=df_ed_bid,
             opt_bid=opt_bid
             ):
             return False
         return True
-            # , "Check SOC boundary setting."
-            # self.placeholder_warning.warning('Check trading scenario setting is correct.', icon=":warning:")
-            # st.stop()
 
     def validate_tendered_cap_setting(self) -> bool:
-        # params = st.session_state["params"]
-        # df_ed_bid = params["ed_bid"]["data"]
-        # cb_opt_tendered_cap = params["cb_opt_tendered_cap"]["value"]
-        # cb_relax_tendered_step = params["cb_opt_tendered_cap"]["value"]
-        # input_tendered_lb = params["input_tendered_lb"]["value"]
-        # input_tendered_ub = params["input_tendered_ub"]["value"]
-
         df_ed_bid = st.session_state["ed_bid"]
-        cb_opt_tendered_cap = st.session_state["cb_opt_tendered_cap"]#["value"]
-        cb_relax_tendered_step = st.session_state["cb_opt_tendered_cap"]#["value"]
-        input_tendered_lb = st.session_state["input_tendered_lb"]#["value"]
-        input_tendered_ub = st.session_state["input_tendered_ub"]#["value"]
+        cb_opt_tendered_cap = st.session_state["cb_opt_tendered_cap"]
+        cb_relax_tendered_step = st.session_state["cb_opt_tendered_cap"]
+        input_tendered_lb = st.session_state["input_tendered_lb"]
+        input_tendered_ub = st.session_state["input_tendered_ub"]
 
         # tendered capacity
         if not cb_opt_tendered_cap:
@@ -1266,8 +1084,6 @@ class Optimizer:
             ):
                 return False
         return True
-        # self.placeholder_warning.warning('Check tendered capacity setting is correct.(non-negativity / integrity / not in bound)', icon=":warning:")
-        # st.stop()
 
     def validate_all_setting(self) -> Tuple[bool, str]:
         if not self.validate_SOC_setting():
@@ -1367,8 +1183,7 @@ class Optimizer:
         self.result = {}
         self.model.build()
         status = self.model.optimize(
-            # max_seconds=st.session_state["params"]["input_max_sec"]["value"]
-            max_seconds=st.session_state["input_max_sec"]#["value"]
+            max_seconds=st.session_state["input_max_sec"]
             )
 
         # update session states
@@ -1379,28 +1194,32 @@ class Optimizer:
         return status.name, df_report, df_result
 
 if __name__ == "__main__":
+    # set page config
     st.set_page_config(page_title='Power Optimizer test(Cht)', layout="wide", page_icon='./img/favicon.png')
-
+    
+    # init data service client
     data_service = DataService()
-    model = ESSModel
-    ui_handler = UIHandler
+
+    # load sample data ad default parameters if it's at first init.
+    if "optimization_status" not in st.session_state:
+        st.session_state['optimization_status'] = ""
+        st.session_state['optimization_count'] = 0
+        st.session_state['df_report'] = None
+        st.session_state['df_result'] = None
+        st.session_state["data"] = data_service.load_sample_data()
+        st.session_state["ui_config"] = data_service.load_ui_config()
+        for param, value in data_service.load_sample_params().items():
+            st.session_state[param] = value
+    
+    # init model
+    model = ESSModel()
+
+    # init ui handler
+    ui_handler = UIHandler()
+
+    # create and start optimizer
     optimizer = Optimizer(
-        data_service=data_service,
-        model_class=model,
-        ui_handler_class=ui_handler
+        model=model,
+        ui_handler=ui_handler
         )
     optimizer.start()
-
-    # data_service = DataService()
-    # data = DataService.load_sample_data()
-    # params = DataService.load_sample_params()
-    # builder = ESSModelBuilder()
-
-    # # Optimizer.set_data(data=data)
-    # # Optimizer.set_params(params=params)
-    # # builder.set_data(data=data)
-    # # builder.set_params(params=params)
-    # model = builder.build()
-    # result = model.optimize(max_seconds=builder.max_sec)
-
-    # print(result)

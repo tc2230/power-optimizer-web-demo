@@ -94,7 +94,7 @@ class DataService:
         params["ed_bid"] = pd.DataFrame.from_dict(params["ed_bid"]).copy()
 
         return params
-    
+
     @staticmethod
     @st.cache_data
     def load_ui_config() -> Dict[str, str]:
@@ -587,7 +587,7 @@ class UIHandler:
 
     def set_render_config(self, side_logo_path, caption=None):
         # set css of buttons
-        st.markdown("<style>.row-widget.stButton {text-align: center;}</style>", unsafe_allow_html=True) 
+        st.markdown("<style>.row-widget.stButton {text-align: center;}</style>", unsafe_allow_html=True)
 
         # set picture and caption at the top of sidebar
         with open(side_logo_path, "rb") as f:
@@ -628,10 +628,11 @@ class UIHandler:
 
         # retrieve ui configs
         config = st.session_state["ui_config"]
+        params = st.session_state["default_params"]
 
         ### Dashboard section - input data
         # page title
-        self.title = st.title('最佳化工具 Demo')
+        self.title = st.title('test demo')
 
         # expander for upload field
         self.exp_upload = st.expander('資料上傳區域', expanded=True)
@@ -647,41 +648,51 @@ class UIHandler:
         # update load data if file uploaded
         if self.upload_load is not None:
             # update session state
-            df = pd.read_csv(self.upload_load)
-            st.session_state['data']["load"]["data"] = df.copy()
+            data, filename = pd.read_csv(self.upload_load), self.upload_load.name
+            st.session_state['data']["load"]["data"] = data.copy()
             st.session_state['data']["load"]["filename"] = self.upload_load.name
+        else:
+            filename = st.session_state["data"]["load"]["filename"]
+            data = st.session_state["data"]["load"]["data"].set_index('time')
 
-        # plot load data
-        filename = st.session_state["data"]["load"]["filename"]
-        data = st.session_state["data"]["load"]["data"].set_index('time')
+        # retrieve/plot figure
+        if filename in st.session_state["fig"]:
+            fig = st.session_state["fig"][filename]
+        else:
+            fig = self.plot_client.make_data_plot(data, name=filename, fig_title="")
+            st.session_state["fig"][filename] = fig
+
         # subheader
         self.col_upload[0].subheader(filename)
-        # get plotly figure
-        fig = self.plot_client.make_data_plot(data, title="")
+        # display figure
         self.col_upload[0].plotly_chart(fig, use_container_width=True)
-        # translation
+        # display dataframe
         data = data.rename(columns={'time':'時間', 'value':'負載量(kWh)'})
-        # show dataframe
         self.col_upload[0].dataframe(data, use_container_width=True)
 
         # update load data if file uploaded
         if self.upload_power is not None:
             # update session state
-            df = pd.read_csv(self.upload_power)
-            st.session_state['data']["power"]["data"] = df.copy()
+            data, filename = pd.read_csv(self.upload_power), self.upload_power.name
+            st.session_state['data']["power"]["data"] = data.copy()
             st.session_state['data']["power"]["filename"] = self.upload_power.name
+        else:
+            filename = st.session_state["data"]["power"]["filename"]
+            data = st.session_state["data"]["power"]["data"].set_index('time')
 
-        # plot power data
-        filename = st.session_state["data"]["power"]["filename"]
-        data = st.session_state["data"]["power"]["data"].set_index('time')
+        # retrieve/plot figure
+        if filename in st.session_state["fig"]:
+            fig = st.session_state["fig"][filename]
+        else:
+            fig = self.plot_client.make_data_plot(data, name=filename, fig_title="")
+            st.session_state["fig"][filename] = fig
+
         # subheader
         self.col_upload[1].subheader(filename)
-        # get plotly figure
-        fig = self.plot_client.make_data_plot(data, title="")
+        # display figure
         self.col_upload[1].plotly_chart(fig, use_container_width=True)
-        # translation
+        # display dataframe
         data = data.rename(columns={'time':'時間', 'value':'發電量(kWh)'})
-        # show dataframe
         self.col_upload[1].dataframe(data, use_container_width=True)
 
         ### Sidebar section
@@ -690,10 +701,12 @@ class UIHandler:
 
         # form submit button
         self.placeholder_btn = form.empty()
-        self.btn_opt = self.placeholder_btn.form_submit_button(
-            label='Optimize',
-            on_click=optimize_callback
-            )
+        self.btn_opt = self.placeholder_btn.form_submit_button(label='Optimize', on_click=optimize_callback)
+
+        # if self.btn_opt:
+            # st.session_state["input_c_cap"] = input_c_cap
+            # st.session_state["input_c_cap"] = st.session_state["input_c_cap"]
+            # optimize_callback()
 
         # displayed status
         self.placeholder_status = form.empty()
@@ -714,215 +727,218 @@ class UIHandler:
             options=config["sb_data_freq"]["options"],
             index=config["sb_data_freq"]["index"],
             help=config["sb_data_freq"]["help"])
-        st.session_state["sb_data_freq"] = sb_data_freq
+        # st.session_state["sb_data_freq"] = sb_data_freq
         input_max_sec = exp_param_1.number_input(
             label=config["input_max_sec"]["label"],
-            value=st.session_state["input_max_sec"],
+            value=params["input_max_sec"],
             step=config["input_max_sec"]["step"],
             help=config["input_max_sec"]["help"])
-        st.session_state["input_max_sec"] = input_max_sec
-        
+        # st.session_state["input_max_sec"] = input_max_sec
+
         # Price-related setting
         exp_param_2 = form.expander('電力價格相關')
+        print(st.session_state["input_c_cap"])
         input_c_cap = exp_param_2.number_input(
             label=config["input_c_cap"]["label"],
-            value=st.session_state["input_c_cap"],
+            value=params["input_c_cap"],
             step=config["input_c_cap"]["step"],
             help=config["input_c_cap"]["help"])
-        st.session_state["input_c_cap"] = input_c_cap
+        print(st.session_state["input_c_cap"], input_c_cap)
+        # st.session_state["input_c_cap"] = input_c_cap
+        # print(st.session_state["input_c_cap"])
         input_basic_tariff_per_kwh = exp_param_2.number_input(
             label=config["input_basic_tariff_per_kwh"]["label"],
-            value=st.session_state["input_basic_tariff_per_kwh"],
+            value=params["input_basic_tariff_per_kwh"],
             step=config["input_basic_tariff_per_kwh"]["step"],
             format=config["input_basic_tariff_per_kwh"]["format"],
             help=config["input_basic_tariff_per_kwh"]["help"])
-        st.session_state["input_basic_tariff_per_kwh"] = input_basic_tariff_per_kwh
+        # st.session_state["input_basic_tariff_per_kwh"] = input_basic_tariff_per_kwh
         cb_summer = exp_param_2.checkbox(
             label=config["cb_summer"]["label"],
-            value=st.session_state["cb_summer"],
+            value=params["cb_summer"],
             help=config["cb_summer"]["help"])
-        st.session_state["cb_summer"] = cb_summer
+        # st.session_state["cb_summer"] = cb_summer
 
         # ESS-related setting
         exp_param_3 = form.expander('儲能系統相關')
         input_e_cap = exp_param_3.number_input(
             label=config["input_e_cap"]["label"],
-            value=st.session_state["input_e_cap"],
+            value=params["input_e_cap"],
             step=config["input_e_cap"]["step"],
             help=config["input_e_cap"]["help"])
-        st.session_state["input_e_cap"] = input_e_cap
+        # st.session_state["input_e_cap"] = input_e_cap
         input_ub = exp_param_3.number_input(
             label=config["input_ub"]["label"],
-            value=st.session_state["input_ub"],
+            value=params["input_ub"],
             step=config["input_ub"]["step"],
             min_value=config["input_ub"]["min_value"],
             max_value=config["input_ub"]["max_value"],
             help=config["input_ub"]["help"])
-        st.session_state["input_ub"] = input_ub
+        # st.session_state["input_ub"] = input_ub
         input_lb= exp_param_3.number_input(
             label=config["input_lb"]["label"],
-            value=st.session_state["input_lb"],
+            value=params["input_lb"],
             step=config["input_lb"]["step"],
             min_value=config["input_lb"]["min_value"],
             max_value=config["input_lb"]["max_value"],
             help=config["input_lb"]["help"])
-        st.session_state["input_lb"] = input_lb
+        # st.session_state["input_lb"] = input_lb
         input_soc_init = exp_param_3.number_input(
             label=config["input_soc_init"]["label"],
-            value=st.session_state["input_soc_init"],
+            value=params["input_soc_init"],
             step=config["input_soc_init"]["step"],
             min_value=config["input_soc_init"]["min_value"],
             max_value=config["input_soc_init"]["max_value"],
             help=config["input_soc_init"]["help"])
-        st.session_state["input_soc_init"] = input_soc_init
+        # st.session_state["input_soc_init"] = input_soc_init
         cb_opt_soc_init = exp_param_3.checkbox(
             label=config["cb_opt_soc_init"]["label"],
-            value=st.session_state["cb_opt_soc_init"],
+            value=params["cb_opt_soc_init"],
             help=config["cb_opt_soc_init"]["help"])
-        st.session_state["cb_opt_soc_init"] = cb_opt_soc_init
+        # st.session_state["cb_opt_soc_init"] = cb_opt_soc_init
         input_soc_end = exp_param_3.number_input(
             label=config["input_soc_end"]["label"],
-            value=st.session_state["input_soc_end"],
+            value=params["input_soc_end"],
             step=config["input_soc_end"]["step"],
             min_value=config["input_soc_end"]["min_value"],
             max_value=config["input_soc_end"]["max_value"],
             help=config["input_soc_end"]["help"])
-        st.session_state["input_soc_end"] = input_soc_end
+        # st.session_state["input_soc_end"] = input_soc_end
         cb_opt_soc_end = exp_param_3.checkbox(
             label=config["cb_opt_soc_end"]["label"],
-            value=st.session_state["cb_opt_soc_end"],
+            value=params["cb_opt_soc_end"],
             help=config["cb_opt_soc_end"]["help"])
-        st.session_state["cb_opt_soc_end"] = cb_opt_soc_end
+        # st.session_state["cb_opt_soc_end"] = cb_opt_soc_end
         input_ess_degradation_cost_per_kwh_discharged = exp_param_3.number_input(
             label=config["input_ess_degradation_cost_per_kwh_discharged"]["label"],
-            value=st.session_state["input_ess_degradation_cost_per_kwh_discharged"],
+            value=params["input_ess_degradation_cost_per_kwh_discharged"],
             step=config["input_ess_degradation_cost_per_kwh_discharged"]["step"],
             format=config["input_ess_degradation_cost_per_kwh_discharged"]["format"],
             help=config["input_ess_degradation_cost_per_kwh_discharged"]["help"])
-        st.session_state["input_ess_degradation_cost_per_kwh_discharged"] = input_ess_degradation_cost_per_kwh_discharged
+        # st.session_state["input_ess_degradation_cost_per_kwh_discharged"] = input_ess_degradation_cost_per_kwh_discharged
 
         # Production-related setting
         exp_param_4 = form.expander('生產相關')
         input_factory_profit_per_kwh = exp_param_4.number_input(
             label=config["input_factory_profit_per_kwh"]["label"],
-            value=st.session_state["input_factory_profit_per_kwh"],
+            value=params["input_factory_profit_per_kwh"],
             step=config["input_factory_profit_per_kwh"]["step"],
             format=config["input_factory_profit_per_kwh"]["format"],
             help=config["input_factory_profit_per_kwh"]["help"])
-        st.session_state["input_factory_profit_per_kwh"] = input_factory_profit_per_kwh
+        # st.session_state["input_factory_profit_per_kwh"] = input_factory_profit_per_kwh
 
         # Trading-related setting
         exp_param_5 = form.expander('輔助服務投標相關')
         input_exec_rate = exp_param_5.number_input(
             label=config["input_exec_rate"]["label"],
-            value=st.session_state["input_exec_rate"],
+            value=params["input_exec_rate"],
             step=config["input_exec_rate"]["step"],
             min_value=config["input_exec_rate"]["min_value"],
             max_value=config["input_exec_rate"]["max_value"],
             help=config["input_exec_rate"]["help"])
-        st.session_state["input_exec_rate"] = input_exec_rate
+        # st.session_state["input_exec_rate"] = input_exec_rate
         sb_effectiveness_level = exp_param_5.selectbox(
             label=config["sb_effectiveness_level"]["label"],
             options=config["sb_effectiveness_level"]["options"],
             index=config["sb_effectiveness_level"]["index"],
             help=config["sb_effectiveness_level"]["help"])
-        st.session_state["sb_effectiveness_level"] = sb_effectiveness_level
+        # st.session_state["sb_effectiveness_level"] = sb_effectiveness_level
 
         # Scenario setting
         exp_param_6 = form.expander('投標情境設定')
         cb_opt_bid = exp_param_6.checkbox(
             label=config["cb_opt_bid"]["label"],
-            value=st.session_state["cb_opt_bid"],
+            value=params["cb_opt_bid"],
             help=config["cb_opt_bid"]["help"])
-        st.session_state["cb_opt_bid"] = cb_opt_bid
+        # st.session_state["cb_opt_bid"] = cb_opt_bid
         cb_opt_tendered_cap = exp_param_6.checkbox(
             label=config["cb_opt_tendered_cap"]["label"],
-            value=st.session_state["cb_opt_tendered_cap"],
+            value=params["cb_opt_tendered_cap"],
             help=config["cb_opt_tendered_cap"]["help"])
-        st.session_state["cb_opt_tendered_cap"] = cb_opt_tendered_cap
+        # st.session_state["cb_opt_tendered_cap"] = cb_opt_tendered_cap
         cb_relax_tendered_step = exp_param_6.checkbox(
             label=config["cb_relax_tendered_step"]["label"],
-            value=st.session_state["cb_relax_tendered_step"],
+            value=params["cb_relax_tendered_step"],
             help=config["cb_relax_tendered_step"]["help"])
-        st.session_state["cb_relax_tendered_step"] = cb_relax_tendered_step
+        # st.session_state["cb_relax_tendered_step"] = cb_relax_tendered_step
         input_tendered_ub = exp_param_6.number_input(
             label=config["input_tendered_ub"]["label"],
-            value=st.session_state["input_tendered_ub"],
+            value=params["input_tendered_ub"],
             step=config["input_tendered_ub"]["step"],
             min_value=config["input_tendered_ub"]["min_value"],
             max_value=config["input_tendered_ub"]["max_value"],
             format=config["input_tendered_ub"]["format"],
             help=config["input_tendered_ub"]["help"])
-        st.session_state["input_tendered_ub"] = input_tendered_ub
+        # st.session_state["input_tendered_ub"] = input_tendered_ub
         input_tendered_lb = exp_param_6.number_input(
             label=config["input_tendered_lb"]["label"],
-            value=st.session_state["input_tendered_lb"],
+            value=params["input_tendered_lb"],
             step=config["input_tendered_lb"]["step"],
             min_value=config["input_tendered_lb"]["min_value"],
             max_value=config["input_tendered_lb"]["max_value"],
             format=config["input_tendered_lb"]["format"],
             help=config["input_tendered_lb"]["help"])
-        st.session_state["input_tendered_lb"] = input_tendered_lb
+        # st.session_state["input_tendered_lb"] = input_tendered_lb
         txt_ed_bid = exp_param_6.text(
             body=config["txt_ed_bid"]["body"],
             help=config["txt_ed_bid"]["help"]
             )
-        st.session_state["txt_ed_bid"] = txt_ed_bid
+        # st.session_state["txt_ed_bid"] = txt_ed_bid
         ed_bid = exp_param_6.data_editor(
-            data=st.session_state["ed_bid"],
+            data=params["ed_bid"],
             use_container_width=True
             )
-        st.session_state["ed_bid"] = ed_bid
+        # st.session_state["ed_bid"] = ed_bid
 
         # Transmission-related setting
         exp_param_7 = form.expander('電力輸送相關')
         input_limit_g_es_p = exp_param_7.number_input(
             label=config["input_limit_g_es_p"]["label"],
-            value=st.session_state["input_limit_g_es_p"],
+            value=params["input_limit_g_es_p"],
             step=config["input_limit_g_es_p"]["step"],
             help=config["input_limit_g_es_p"]["help"])
-        st.session_state["input_limit_g_es_p"] = input_limit_g_es_p
+        # st.session_state["input_limit_g_es_p"] = input_limit_g_es_p
         input_limit_es_p = exp_param_7.number_input(
             label=config["input_limit_es_p"]["label"],
-            value=st.session_state["input_limit_es_p"],
+            value=params["input_limit_es_p"],
             step=config["input_limit_es_p"]["step"],
             help=config["input_limit_es_p"]["help"])
-        st.session_state["input_limit_es_p"] = input_limit_es_p
+        # st.session_state["input_limit_es_p"] = input_limit_es_p
         input_limit_g_p = exp_param_7.number_input(
             label=config["input_limit_g_p"]["label"],
-            value=st.session_state["input_limit_g_p"],
+            value=params["input_limit_g_p"],
             step=config["input_limit_g_p"]["step"],
             help=config["input_limit_g_p"]["help"])
-        st.session_state["input_limit_g_p"] = input_limit_g_p
+        # st.session_state["input_limit_g_p"] = input_limit_g_p
         input_limit_pv_p = exp_param_7.number_input(
             label=config["input_limit_pv_p"]["label"],
-            value=st.session_state["input_limit_pv_p"],
+            value=params["input_limit_pv_p"],
             step=config["input_limit_pv_p"]["step"],
             help=config["input_limit_pv_p"]["help"])
-        st.session_state["input_limit_pv_p"] = input_limit_pv_p
+        # st.session_state["input_limit_pv_p"] = input_limit_pv_p
         input_loss_coef = exp_param_7.number_input(
             label=config["input_loss_coef"]["label"],
-            value=st.session_state["input_loss_coef"],
+            value=params["input_loss_coef"],
             step=config["input_loss_coef"]["step"],
             min_value=config["input_loss_coef"]["min_value"],
             max_value=config["input_loss_coef"]["max_value"],
             format=config["input_loss_coef"]["format"],
             help=config["input_loss_coef"]["help"])
-        st.session_state["input_loss_coef"] = input_loss_coef
+        # st.session_state["input_loss_coef"] = input_loss_coef
 
         # PV-related setting
         exp_param_8 = form.expander('太陽能發電機組相關')
         input_bulk_tariff_per_kwh = exp_param_8.number_input(
             label=config["input_bulk_tariff_per_kwh"]["label"],
-            value=st.session_state["input_bulk_tariff_per_kwh"],
+            value=params["input_bulk_tariff_per_kwh"],
             step=config["input_bulk_tariff_per_kwh"]["step"],
             format=config["input_bulk_tariff_per_kwh"]["format"],
             help=config["input_bulk_tariff_per_kwh"]["help"])
-        st.session_state["input_bulk_tariff_per_kwh"] = input_bulk_tariff_per_kwh
+        # st.session_state["input_bulk_tariff_per_kwh"] = input_bulk_tariff_per_kwh
 
         ### Dashboard section - optimization result
         if st.session_state["optimization_count"] == 0 and not self.btn_opt:
-            st.stop()
+            None
         else:
             with st.spinner("ZzZZzzz..."):
                 # validate params setting
@@ -935,51 +951,66 @@ class UIHandler:
                     # optimize with callback
                     status, df_report, df_result = optimize_callback()
 
-                # set dataframe index
-                df_report = df_report.set_index('項目')
-                df_result = df_result.set_index('time')
+                if status not in [OptimizationStatus.OPTIMAL, OptimizationStatus.FEASIBLE]:
+                    # display message
+                    self.placeholder_warning = st.empty()
+                    self.placeholder_warning.warning("Current status is not optimal either feasible, please check https://python-mip.readthedocs.io/en/latest/classes.html#OptimizationStatus for further information.", icon="⚠️") # Shortcodes are not allowed when using warning container, only single character.
 
-                # create container
-                self.exp_opt = st.expander("檢視最佳化結果與報表", expanded=True)
 
-                # grpah
-                self.exp_opt.subheader('最佳化排程圖表')
-                plt_result = self.plot_client.make_result_plot(df_result)# , secondary_y_limit=[0,input_tendered_cap]
-                self.exp_opt.plotly_chart(plt_result, use_container_width=True)
+                    # update status
+                    self.placeholder_status.empty()
+                    self.text_opt_status = self.placeholder_status.text(
+                        body=f'Status: {status.name}',
+                        help=config["text_opt_status"]["help"]
+                        )
+                else:
+                    # set dataframe index
+                    df_report = df_report.set_index('項目')
+                    df_result = df_result.set_index('time')
 
-                # create column
-                self.col_opt = self.exp_opt.columns((2,4))
+                    # create container
+                    self.exp_opt = st.expander("檢視最佳化結果與報表", expanded=True)
 
-                # report
-                self.col_opt[0].markdown('<p style="font-family:Source Sans Pro, sans-serif; font-size: 1.5rem; font-weight: bold;">收益報表</p>', unsafe_allow_html=True)
-                self.col_opt[0].dataframe(df_report, use_container_width=True)
+                    # grpah
+                    self.exp_opt.subheader('最佳化排程圖表')
+                    plt_result = self.plot_client.make_result_plot(df_result)# , secondary_y_limit=[0,input_tendered_cap]
+                    self.exp_opt.plotly_chart(plt_result, use_container_width=True)
 
-                # operational result
-                self.col_opt[1].markdown('<p style="font-family:Source Sans Pro, sans-serif; font-size: 1.5rem; font-weight: bold;">最佳化排程</p>', unsafe_allow_html=True)
-                self.col_opt[1].dataframe(df_result, use_container_width=True)
+                    # create column
+                    self.col_opt = self.exp_opt.columns((2,4))
 
-                # update optimize button and status
-                self.btn_opt = self.placeholder_btn.form_submit_button(label=' Optimize ')
+                    # report
+                    self.col_opt[0].markdown('<p style="font-family:Source Sans Pro, sans-serif; font-size: 1.5rem; font-weight: bold;">收益報表</p>', unsafe_allow_html=True)
+                    self.col_opt[0].dataframe(df_report, use_container_width=True)
 
-                # uodate status
-                self.placeholder_status.empty()
-                self.text_opt_status = self.placeholder_status.text(
-                    body=f'Status: {status}',
-                    help=config["text_opt_status"]["help"]
-                    )
+                    # operational result
+                    self.col_opt[1].markdown('<p style="font-family:Source Sans Pro, sans-serif; font-size: 1.5rem; font-weight: bold;">最佳化排程</p>', unsafe_allow_html=True)
+                    self.col_opt[1].dataframe(df_result, use_container_width=True)
 
+                    # update optimize button and status
+                    self.btn_opt = self.placeholder_btn.form_submit_button(label=' Optimize ')
+
+                    # uodate status
+                    self.placeholder_status.empty()
+                    self.text_opt_status = self.placeholder_status.text(
+                        body=f'Status: {status.name}',
+                        help=config["text_opt_status"]["help"]
+                        )
                 # count optimization
                 st.caption(f'Optimization count : {st.session_state["optimization_count"]}')
+
+        # if self.btn_opt:
+        #     optimize_callback()
 
 class PlotClient:
     def __init__(self):
         pass
 
-    def make_data_plot(self, df, title='', x='time', y='value'):
+    def make_data_plot(self, df, name="_", fig_title='', x='time', y='value'):
         df = df.reset_index()
         fig = px.line(df, x=x, y=y)
         fig.update_layout(
-            title=title,
+            title=fig_title,
             xaxis_title="time",
             yaxis_title="value(kWh)",
             # width=1800,
@@ -991,7 +1022,7 @@ class PlotClient:
             ))
         return fig
 
-    def make_result_plot(self, df, title='', secondary_y_limit=None):
+    def make_result_plot(self, df, name="_", fig_title='', secondary_y_limit=None):
         x_index = df.index
         dash_line = dict(dash = 'dash')
         opacity = 0.4
@@ -1011,7 +1042,7 @@ class PlotClient:
         # update layout
         fig.update_layout(dict(yaxis2={'anchor': 'x', 'overlaying': 'y', 'side': 'left'},
                             yaxis={'anchor': 'x', 'domain': [0.0, 1.0], 'side':'right'}))
-        fig.update_layout(title_text=title, xaxis_title="time", yaxis_title="Power(kWh)", margin=dict(t=28),
+        fig.update_layout(title_text=fig_title, xaxis_title="time", yaxis_title="Power(kWh)", margin=dict(t=28),
                         font=dict(size=32, family="Arial", color="black"))
         # fig.update_yaxes(range=[0,df['total_power_from_grid_to_factory'].min()-100], secondary_y=True)
         # fig.update_yaxes(range=[0, secondary_y_limit], secondary_y=False)
@@ -1019,7 +1050,7 @@ class PlotClient:
 
         fig.update_yaxes(rangemode='nonnegative', scaleanchor='y', scaleratio=1, constraintoward='bottom', secondary_y=True)
         fig.update_yaxes(rangemode='normal', scaleanchor='y2', scaleratio=0.5, constraintoward='bottom', secondary_y=False)
-
+        # st.session_state["fig"][name] = fig
         return fig
 
 class Optimizer:
@@ -1190,13 +1221,17 @@ class Optimizer:
         st.session_state["optimization_status"] = status.name
         st.session_state["optimization_count"] += 1
 
-        df_report, df_result = self.retrieve_result()
-        return status.name, df_report, df_result
+        # return result
+        if status in [OptimizationStatus.OPTIMAL, OptimizationStatus.FEASIBLE]:
+            df_report, df_result = self.retrieve_result()
+            return status, df_report, df_result
+        else:
+            return status, pd.DataFrame(), pd.DataFrame()
 
 if __name__ == "__main__":
     # set page config
     st.set_page_config(page_title='Power Optimizer test(Cht)', layout="wide", page_icon='./img/favicon.png')
-    
+
     # init data service client
     data_service = DataService()
 
@@ -1204,13 +1239,15 @@ if __name__ == "__main__":
     if "optimization_status" not in st.session_state:
         st.session_state['optimization_status'] = ""
         st.session_state['optimization_count'] = 0
+        st.session_state["fig"] = {}
         st.session_state['df_report'] = None
         st.session_state['df_result'] = None
         st.session_state["data"] = data_service.load_sample_data()
         st.session_state["ui_config"] = data_service.load_ui_config()
+        st.session_state["default_params"] = data_service.load_sample_params()
         for param, value in data_service.load_sample_params().items():
             st.session_state[param] = value
-    
+
     # init model
     model = ESSModel()
 

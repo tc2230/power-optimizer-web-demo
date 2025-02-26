@@ -1,4 +1,4 @@
-import streamlit as st
+# import streamlit as st
 
 
 # if "a" not in st.session_state:
@@ -21,17 +21,11 @@ import streamlit as st
 # st.write(":warning:")
 # st.session_state["val"] = 1
 
-def foo():
-    st.write('exec 1')
-    st.write(list(st.session_state.keys()))
-    if 'test' not in st.session_state:
-        st.session_state['test'] = 123
+import streamlit as st
 
-st.write('exec 2')
-st.write(list(st.session_state.keys()))
+name = st.text_input("Name")
+if not name:
+  st.warning('Please input a name.')
+  st.stop()
 
-form = st.form(key='form', clear_on_submit=False)
-btn = form.form_submit_button('btn', on_click=foo)
-
-st.write('exec 3')
-st.write(list(st.session_state.keys()))
+st.success("Thank you for inputting a name.")

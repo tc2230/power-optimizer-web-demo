@@ -7,6 +7,8 @@ services:
     expose:
       - 8501
     command: ["nohup", "streamlit", "run", "web_demo.py", "--server.port", "8501", "--server.baseUrlPath", "/power-optimizer", "--theme.base", "dark", "&"] # , "--server.port", "8501" 
+    volumes:
+      - ./:/deploy
     networks:
       - service-network
 

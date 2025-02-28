@@ -657,7 +657,7 @@ def verify_tendered_capacity_non_negative(ed_bid):
 
 ######## page body
 # set layout
-st.set_page_config(page_title='Power Optimizer test(Cht)', layout="wide", page_icon='./fine_n.png')
+st.set_page_config(page_title='Power Optimizer', layout="wide", page_icon='./favicon.ico')
 # =None, layout="centered", initial_sidebar_state="auto", menu_items=None
 
 

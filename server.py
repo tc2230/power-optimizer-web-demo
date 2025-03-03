@@ -1,8 +1,6 @@
 import os
-import io
 import json
 import base64
-import datetime
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -80,8 +78,24 @@ class MIPModel:
         self.model = Model()
         pass
 
+    def update_config(self):
+        # update params from session state
+        pass
+
+    def update_data(self):
+        # update data values from session state
+        pass
+
+    def update_price(self):
+        # update pricing values according to session state configs
+        pass
+
+    def update_aux_values(self):
+        # update auxiliary values according to session state configs
+        pass
+
     def update(self):
-        # update params and aux values from session state
+        # update all variables related to model
         pass
 
     def _add_vars(self):
@@ -111,12 +125,9 @@ class ESSModel(MIPModel):
     def __init__(self):
         super().__init__()
 
-    def update(self):
-        # retrieve parameter and data from session state
-        df_load = st.session_state["data"]["load"]["data"]
-        df_pv = st.session_state["data"]["power"]["data"]
-
+    def update_config(self):
         self.data_freq = st.session_state["current_params"]["sb_data_freq"]
+        self.consecutive_n = int(60/self.data_freq)
         self.max_sec = st.session_state["current_params"]["input_max_sec"]
         self.c_cap = st.session_state["current_params"]["input_c_cap"]
         self.basic_tariff_per_kwh = st.session_state["current_params"]["input_basic_tariff_per_kwh"]
@@ -150,9 +161,14 @@ class ESSModel(MIPModel):
         self.limit_pv_p = st.session_state["current_params"]["input_limit_pv_p"]
         self.loss_coef = st.session_state["current_params"]["input_loss_coef"]
         self.bulk_tariff_per_kwh = st.session_state["current_params"]["input_bulk_tariff_per_kwh"]
+        pass
 
-        ### retrieve info from input data
-        self.consecutive_n = int(60/self.data_freq)
+    def update_data(self):
+        # retrieve data
+        df_load = st.session_state["data"]["load"]["data"]
+        df_pv = st.session_state["data"]["power"]["data"]
+
+        ### set config according to updated data
         self.n = int(len(df_load)/(self.data_freq/5)) # number of time window
         # index
         self.index = df_load['time'].iloc[::int(self.data_freq/5)].values.flatten()
@@ -160,7 +176,9 @@ class ESSModel(MIPModel):
         self.load = df_load['value'].iloc[::int(self.data_freq/5)].values.flatten()
         # PV
         self.pv = df_pv['value'].iloc[::int(self.data_freq/5)].values.flatten()
+        pass
 
+    def update_price(self):
         ### energy charging rate (111/7)
         if self.summer:
             # summer charging rate
@@ -215,6 +233,7 @@ class ESSModel(MIPModel):
         #     self.price = np.hstack([p1, p2, p3, p4])
         #####################################
 
+    def update_aux_values(self):
         ### prepare initial values for parameters and auxiliary variables
         # Multiplication factor for penalty charge
         self.dummy_penalty_coef_1 = 2
@@ -246,6 +265,14 @@ class ESSModel(MIPModel):
         ### other
         # big M for penalty
         self.M = 1e+15
+        pass
+
+    def update(self):
+        self.update_config()
+        self.update_data()
+        self.update_price()
+        self.update_aux_values()
+        pass
 
     def _add_vars(self):
         ### retrieve constants and data length
@@ -273,15 +300,15 @@ class ESSModel(MIPModel):
         self.es = [self.model.add_var(name=f"ESS_SOC_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)]
 
         # excessive load
-        self.b_exceed = [self.model.add_var(name=f"if_exceed_110%_cap_at_t{i}", var_type=BINARY) for i in range(n)]
+        self.if_exceed = [self.model.add_var(name=f"if_exceed_110%_cap_at_t{i}", var_type=BINARY) for i in range(n)]
         self.dummy_g_1 = [self.model.add_var(name=f"dummy_power_1_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)]
         self.dummy_g_2 = [self.model.add_var(name=f"dummy_power_2_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)]
         self.dummy_g_f = [self.model.add_var(name=f"dummy_power_from_grid_to_factory_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)]
         self.dummy_g_es = [self.model.add_var(name=f"dummy_power_from_grid_to_ESS_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)]
 
         # ESS charging/discharging status (or)
-        self.b_chg = [self.model.add_var(name=f"ESS_is_charging_at_t{i}", var_type=BINARY) for i in range(n)]
-        self.b_dch = [self.model.add_var(name=f"ESS_is_discharging_at_t{i}", var_type=BINARY) for i in range(n)]
+        self.if_charging = [self.model.add_var(name=f"ESS_is_charging_at_t{i}", var_type=BINARY) for i in range(n)]
+        self.if_discharging = [self.model.add_var(name=f"ESS_is_discharging_at_t{i}", var_type=BINARY) for i in range(n)]
         self.aux_p_g_es = [self.model.add_var(name=f"aux_power_from_grid_to_ESS_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)]
         self.aux_p_es_f = [self.model.add_var(name=f"aux_power_from_ESS_to_factory_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)]
         self.aux_dummy_g_es = [self.model.add_var(name=f"aux_dummy_power_from_grid_to_ESS_t{i}", var_type=CONTINUOUS, lb=0) for i in range(n)]
@@ -293,8 +320,8 @@ class ESSModel(MIPModel):
         # dummies for penalty calculation
         self.q_1 = self.model.add_var(name=f"max_dummy_power_1", var_type=CONTINUOUS)
         self.q_2 = self.model.add_var(name=f"max_dummy_power_2", var_type=CONTINUOUS)
-        self.b_max_aux_1 = [self.model.add_var(name=f"max_func_aux_1_t{i}", var_type=BINARY) for i in range(n)]
-        self.b_max_aux_2 = [self.model.add_var(name=f"max_func_aux_2_t{i}", var_type=BINARY) for i in range(n)]
+        self.if_max_aux_1 = [self.model.add_var(name=f"max_func_aux_1_t{i}", var_type=BINARY) for i in range(n)]
+        self.if_max_aux_2 = [self.model.add_var(name=f"max_func_aux_2_t{i}", var_type=BINARY) for i in range(n)]
 
         # bidding decision
         self.bid = [1 if v else 0 for v in self.bid]
@@ -327,16 +354,16 @@ class ESSModel(MIPModel):
         # set linear constraints for multiplication of decision variables
         for i in range(n):
             # either charging or discharging
-            self.model.add_constr(self.b_chg[i] + self.b_dch[i] <= 1)
+            self.model.add_constr(self.if_charging[i] + self.if_discharging[i] <= 1)
             self.model.add_constr(self.aux_p_g_es[i] <= self.p_g_es[i])
-            self.model.add_constr(self.aux_p_g_es[i] <= M * self.b_chg[i])
-            self.model.add_constr(self.aux_p_g_es[i] >= self.p_g_es[i] + M * (self.b_chg[i]-1))
+            self.model.add_constr(self.aux_p_g_es[i] <= M * self.if_charging[i])
+            self.model.add_constr(self.aux_p_g_es[i] >= self.p_g_es[i] + M * (self.if_charging[i]-1))
             self.model.add_constr(self.aux_dummy_g_es[i] <= self.dummy_g_es[i])
-            self.model.add_constr(self.aux_dummy_g_es[i] <= M * self.b_chg[i])
-            self.model.add_constr(self.aux_dummy_g_es[i] >= self.dummy_g_es[i] + M * (self.b_chg[i]-1))
+            self.model.add_constr(self.aux_dummy_g_es[i] <= M * self.if_charging[i])
+            self.model.add_constr(self.aux_dummy_g_es[i] >= self.dummy_g_es[i] + M * (self.if_charging[i]-1))
             self.model.add_constr(self.aux_p_es_f[i] <= self.p_es_f[i])
-            self.model.add_constr(self.aux_p_es_f[i] <= M * self.b_dch[i])
-            self.model.add_constr(self.aux_p_es_f[i] >= self.p_es_f[i] + M * (self.b_dch[i]-1))
+            self.model.add_constr(self.aux_p_es_f[i] <= M * self.if_discharging[i])
+            self.model.add_constr(self.aux_p_es_f[i] >= self.p_es_f[i] + M * (self.if_discharging[i]-1))
             # tendered capacity and bidding decision
             if self.opt_tendered_cap:
                 self.model.add_constr(self.aux_tendered_cap[i] >= 0) # just ensure
@@ -363,11 +390,11 @@ class ESSModel(MIPModel):
         ## maximum function of dummy variables, for panelty calculation
         for i in range(n):
             self.model.add_constr(self.q_1 >= self.dummy_g_1[i])
-            self.model.add_constr(self.q_1 <= self.dummy_g_1[i] + M * self.b_max_aux_1[i])
+            self.model.add_constr(self.q_1 <= self.dummy_g_1[i] + M * self.if_max_aux_1[i])
             self.model.add_constr(self.q_2 >= self.dummy_g_2[i])
-            self.model.add_constr(self.q_2 <= self.dummy_g_2[i] + M * self.b_max_aux_2[i])
-        self.model.add_constr( xsum( self.b_max_aux_1[i] for i in range(n) ) <= n-1 )
-        self.model.add_constr( xsum( self.b_max_aux_2[i] for i in range(n) ) <= n-1 )
+            self.model.add_constr(self.q_2 <= self.dummy_g_2[i] + M * self.if_max_aux_2[i])
+        self.model.add_constr( xsum( self.if_max_aux_1[i] for i in range(n) ) <= n-1 )
+        self.model.add_constr( xsum( self.if_max_aux_2[i] for i in range(n) ) <= n-1 )
 
         ## factory
         # load
@@ -421,10 +448,10 @@ class ESSModel(MIPModel):
 
         ## split excessive power for additional tariff calculation
         for i in range(n):
-            self.model.add_constr(0.1*self.c_cap*self.b_exceed[i] <= self.dummy_g_1[i])
+            self.model.add_constr(0.1*self.c_cap*self.if_exceed[i] <= self.dummy_g_1[i])
             self.model.add_constr(self.dummy_g_1[i] <= 0.1*self.c_cap)
             self.model.add_constr(self.dummy_g_2[i] >= 0)
-            self.model.add_constr(self.dummy_g_2[i] <= self.b_exceed[i]*M)
+            self.model.add_constr(self.dummy_g_2[i] <= self.if_exceed[i]*M)
             self.model.add_constr(self.dummy_g_1[i] + self.dummy_g_2[i] == self.dummy_g_f[i] + self.aux_dummy_g_es[i])
 
         ## transfer limitation
@@ -536,7 +563,7 @@ class UIHandler:
         self.config = st.session_state["ui_config"]
         self.default_params = st.session_state["default_params"]
 
-    def set_render_config(self, side_logo_path, caption=None):
+    def set_render_config(self, side_logo_path: str , caption: str|None = None):
         # set css of buttons
         st.markdown("<style>.row-widget.stButton {text-align: center;}</style>", unsafe_allow_html=True)
 
@@ -553,23 +580,6 @@ class UIHandler:
                     </p>
                 </div>
                 """,
-                # f"""
-                # <div style="display:table; margin-top:-32%; margin-left:-2%; font-family:'Source Sans Pro', sans-serif; margin-bottom: -1rem; color: rgb(163, 168, 184); font-size: 14px;">
-                #     <img src="data:image/png;base64,{data}" width="60" height="60">
-                #     <p style="font-family:'Source Sans Pro', sans-serif; margin-bottom: -1rem; color: rgb(163, 168, 184); font-size: 14px;">
-                #         {caption}
-                #     </p>
-                # </div>
-                # """,
-
-                # f"""
-                # <div style="display:table; margin-top:-32%; margin-left:-2%;">
-                #     <img src="data:image/png;base64,{data}" width="60" height="60">
-                #     <p style="font-family:'Source Sans Pro', sans-serif; margin-bottom: -1rem; color: rgb(163, 168, 184); font-size: 14px;">
-                #         {caption}
-                #     </p>
-                # </div>
-                # """,
                 unsafe_allow_html=True,
             )
 
@@ -961,7 +971,7 @@ class PlotClient:
     def __init__(self):
         pass
 
-    def make_data_plot(self, df, name="_", fig_title='', x='time', y='value'):
+    def make_data_plot(self, df: pd.DataFrame, name: str = "_", fig_title: str = '', x: str = 'time', y: str = 'value'):
         df = df.reset_index()
         fig = px.line(df, x=x, y=y)
         fig.update_layout(
@@ -977,7 +987,7 @@ class PlotClient:
             ))
         return fig
 
-    def make_result_plot(self, df, name="_", fig_title='', secondary_y_limit=None):
+    def make_result_plot(self, df: pd.DataFrame, name: str = "_", fig_title: str = '', secondary_y_limit: bool = None):
         x_index = df.index
         dash_line = dict(dash = 'dash')
         opacity = 0.4
@@ -1129,10 +1139,10 @@ class Optimizer:
         result['power_from_grid_to_ESS'] = [v.x for v in model.aux_p_g_es]
 
         result['ESS_SOC'] = [v.x for v in model.es]
-        result['ESS_is_charging'] = [v.x for v in model.b_chg]
-        result['ESS_is_discharging'] = [v.x for v in model.b_dch]
+        result['ESS_is_charging'] = [v.x for v in model.if_charging]
+        result['ESS_is_discharging'] = [v.x for v in model.if_discharging]
 
-        result['exceed_contract_capacity'] = [v.x for v in model.b_exceed]
+        result['exceed_contract_capacity'] = [v.x for v in model.if_exceed]
         result['excessive_power_below_110%'] = [v.x for v in model.dummy_g_1]
         result['excessive_power_over_110%'] = [v.x for v in model.dummy_g_2]
         result['excessive_power_from_grid_to_factory'] = [v.x for v in model.dummy_g_f]
@@ -1181,7 +1191,7 @@ class Optimizer:
 
 if __name__ == "__main__":
     # set page config
-    st.set_page_config(page_title='Power Optimizer test(Cht)', layout="wide", page_icon='./img/favicon.png')
+    st.set_page_config(page_title='Power optimizer demo(Cht)', layout="wide", page_icon='./img/favicon.png')
 
     # init data service client
     data_client = DataClient()

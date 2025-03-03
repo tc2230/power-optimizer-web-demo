@@ -4,11 +4,28 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    expose:
-      - 8501
-    command: ["nohup", "streamlit", "run", "web_demo.py", "--server.port", "8501", "--server.baseUrlPath", "/power-optimizer", "--theme.base", "dark", "&"] # , "--server.port", "8501" 
+    ports:
+      - 8501:8501
+    #    expose:
+    #      - 8501
     volumes:
       - ./:/deploy
+    command:
+      [
+        'nohup',
+        'streamlit',
+        'run',
+        'web-demo.py',
+        '--server.port',
+        '8501',
+        '--server.baseUrlPath',
+        '/power-optimizer',
+        '--theme.base',
+        'dark',
+        '&',
+        '--server.runOnSave',
+        'true',
+      ]
     networks:
       - service-network
 
@@ -16,3 +33,4 @@ networks:
   service-network:
     name: service-network
     driver: bridge
+    external: true

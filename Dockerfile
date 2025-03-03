@@ -6,8 +6,7 @@ RUN mkdir /deploy
 
 # 將 Dockerfile 同一目錄下的所有檔案(包含 requirements.txt 和 main.py) 複製到 container 中的 /code 資料夾
 ## COPY <source_file_path> <destination_file_path>
-## COPY ./* /init
-COPY ./requirements.txt /deploy
+COPY ./* /deploy
 
 # 在建立 container 時執行 "pip install" 指令，安裝 requirement.txt 中的內容
 RUN pip install --no-cache-dir --upgrade -r /deploy/requirements.txt

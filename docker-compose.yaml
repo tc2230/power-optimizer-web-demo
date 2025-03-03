@@ -10,7 +10,8 @@ services:
     #      - 8501
     volumes:
       - ./:/deploy
-    command: [
+    command:
+      [
         'nohup',
         'streamlit',
         'run',
@@ -24,7 +25,7 @@ services:
         '&',
         '--server.runOnSave',
         'true',
-      ] # , "--server.port", "8501"
+      ]
     networks:
       - service-network
 

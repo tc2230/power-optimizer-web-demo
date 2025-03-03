@@ -1191,7 +1191,7 @@ class Optimizer:
 
 if __name__ == "__main__":
     # set page config
-    st.set_page_config(page_title='Power optimizer demo(Cht)', layout="wide", page_icon='./img/favicon.png')
+    st.set_page_config(page_title='Power Optimizer Demo(Cht)', layout="wide", page_icon='./img/favicon.png')
 
     # init data service client
     data_client = DataClient()

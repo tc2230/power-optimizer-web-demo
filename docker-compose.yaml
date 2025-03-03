@@ -33,3 +33,4 @@ networks:
   service-network:
     name: service-network
     driver: bridge
+    external: true

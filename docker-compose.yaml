@@ -15,7 +15,7 @@ services:
         'nohup',
         'streamlit',
         'run',
-        'web-demo.py',
+        'server.py',
         '--server.port',
         '8501',
         '--server.baseUrlPath',
